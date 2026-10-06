@@ -36,4 +36,5 @@ export function getFirestoreInstance(): Firestore {
   return db;
 }
 
-export { auth as authInstance, db as firestoreInstance } from 'firebase/auth';
+export const auth = getAuthInstance();
+export const db = getFirestoreInstance();

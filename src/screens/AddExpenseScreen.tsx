@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { useHousehold } from '../contexts/HouseholdContext';
-import { useAuth } from '../contexts/AuthContext';
-import { formatMoney } from '../utils/format';
-import { genCode } from '../utils/helpers';
+import { useHousehold } from './contexts/HouseholdContext';
+import { useAuth } from './contexts/AuthContext';
+import { formatMoney } from './utils/format';
+import { genCode } from './utils/helpers';
 
 export function AddExpenseScreen() {
   const { household, members, categories } = useHousehold();

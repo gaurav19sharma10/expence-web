@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { useAuth } from '../contexts/AuthContext';
-import { useHousehold } from '../contexts/HouseholdContext';
-import { useSettings } from '../contexts/SettingsContext';
+import { useAuth } from './contexts/AuthContext';
+import { useHousehold } from './contexts/HouseholdContext';
+import { useSettings } from './contexts/SettingsContext';
 import { LoginScreen } from './screens/LoginScreen';
 import { HomeScreen } from './screens/HomeScreen';
 import { HistoryScreen } from './screens/HistoryScreen';

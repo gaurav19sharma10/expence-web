@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { useHousehold } from '../contexts/HouseholdContext';
-import { useAuth } from '../contexts/AuthContext';
-import { useSettings } from '../contexts/SettingsContext';
-import { formatMoney, formatDateShort } from '../utils/format';
-import { formatRelativeTime } from '../utils/format';
-import { EmptyState, ExpenseCard, SettlementCard } from '../components/Common';
+import { useHousehold } from './contexts/HouseholdContext';
+import { useAuth } from './contexts/AuthContext';
+import { useSettings } from './contexts/SettingsContext';
+import { formatMoney, formatDateShort } from './utils/format';
+import { formatRelativeTime } from './utils/format';
+import { EmptyState, ExpenseCard, SettlementCard } from './components/Common';
 
 export function HomeScreen() {
   const { household, members, expenses, topups } = useHousehold();

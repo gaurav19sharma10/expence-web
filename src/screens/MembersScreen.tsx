@@ -1,6 +1,6 @@
 import React from 'react';
-import { useHousehold } from '../contexts/HouseholdContext';
-import { formatMoney } from '../utils/format';
+import { useHousehold } from './contexts/HouseholdContext';
+import { formatMoney } from './utils/format';
 
 export function MembersScreen() {
   const { members, household } = useHousehold();

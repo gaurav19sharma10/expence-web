@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { formatMoney, formatDateShort } from '../utils/format';
+import { formatMoney, formatDateShort } from './utils/format';
 
 interface ExpenseCardProps {
   expense: any;

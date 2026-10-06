@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { useAuth } from '../contexts/AuthContext';
-import { useSettings } from '../contexts/SettingsContext';
+import { useAuth } from './contexts/AuthContext';
+import { useSettings } from './contexts/SettingsContext';
 
 export function LoginScreen() {
   const { signIn, signUp } = useAuth();

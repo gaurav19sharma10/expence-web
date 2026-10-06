@@ -65,8 +65,8 @@ export function HistoryScreen() {
                       <li key={expense.id} className="history-item">
                         <div className="expense-info">
                           <span className="expense-title">{expense.description || expense.merchant || 'Expense'}</span>
-                          <span className="expense-meta">{formatDate(expense.dateEpochDay)} • {formatMoney(expense.baseAmountMinor)}</span>
-                        </span>
+<span className="expense-meta">{formatDateShort(expense.dateEpochDay)} • {formatMoney(expense.baseAmountMinor)}</span>
+                          </div>
                         <span className="expense-amount">{formatMoney(expense.baseAmountMinor)}</span>
                       </li>
                     ))}

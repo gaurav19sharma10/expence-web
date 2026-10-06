@@ -100,7 +100,7 @@ export function ProfileScreen() {
         {editing ? (
           <div className="form-actions">
             <button className="btn-secondary" onClick={() => setEditing(false)}>Cancel</button>
-            <button className="btn-primary" onClick={save} disabled={saving}>
+            <button className="btn-primary" onClick={handleSave} disabled={saving}>
               {saving ? 'Saving...' : 'Save Changes'}
             </button>
           </div>

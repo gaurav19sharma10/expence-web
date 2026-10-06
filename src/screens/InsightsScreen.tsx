@@ -48,21 +48,21 @@ export function InsightsScreen() {
 
       <h3>By Category</h3>
       <div className="category-breakdown">
-        {byCategory.length === 0 ? (
+        {Object.keys(byCategory).length === 0 ? (
           <p className="empty-state">No expenses this month</p>
         ) : (
-          byCategory.map(({ name, amount, color }) => (
-            <div key={name} className="category-row">
+          Object.entries(byCategory).map(([catName, amount]) => (
+            <div key={catName} className="category-row">
               <div className="category-info">
-                <span className="category-color" style={{ backgroundColor: color }}></span>
-                <span>{name}</span>
+                <span className="category-color" style={{ backgroundColor: '#3d6b4f' }}></span>
+                <span>{categories.find(c => c.id === catName)?.name || 'Uncategorised'}</span>
               </div>
               <div className="category-amount">
-                <span className="bar" style={{ width: `${(amount / (total || 1)) * 100}%`, backgroundColor: color }}></span>
+                <span className="bar" style={{ width: `${(amount / (totalSpent || 1)) * 100}%`, backgroundColor: '#3d6b4f' }}></span>
                 <span className="amount">{formatMoney(amount)}</span>
               </div>
             </div>
-          ))}
+          ))
         )}
       </div>
     </div>

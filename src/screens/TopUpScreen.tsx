@@ -5,7 +5,7 @@ import { formatMoney } from './utils/format';
 
 export function TopUpScreen() {
   const { household, topups, addTopup, members } = useHousehold();
-  const { currentUser } = useAuth();
+  const { user: currentUser } = useAuth();
   const [showModal, setShowModal] = useState(false);
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
@@ -86,7 +86,7 @@ export function TopUpScreen() {
             </div>
             <div className="modal-actions">
               <button className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={save}>Add</button>
+              <button className="btn btn-primary" onClick={handleSave}>Add</button>
             </div>
           </div>
         )}

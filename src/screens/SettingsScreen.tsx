@@ -5,7 +5,7 @@ import { useSettings } from './contexts/SettingsContext';
 import { formatMoney } from './utils/format';
 
 export function SettingsScreen() {
-  const { currentUser, signOut, profile } = useAuth();
+  const { user: currentUser, signOut, profile } = useAuth();
   const { household, members } = useHousehold();
   const { themeMode, darkIntensity, setThemeMode, setDarkIntensity, appLockEnabled, setAppLockEnabled, verifyPin } = useSettings();
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);

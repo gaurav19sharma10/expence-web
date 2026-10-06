@@ -6,7 +6,7 @@ import { genCode } from './utils/helpers';
 
 export function AddExpenseScreen() {
   const { household, members, categories } = useHousehold();
-  const { currentUser } = useAuth();
+  const { user: currentUser } = useAuth();
   
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
@@ -162,7 +162,7 @@ export function AddExpenseScreen() {
         />
       </div>
 
-      <button className="btn-primary full-width" onClick={save} disabled={!description || !amount || !category || !payer || participants.length === 0}>
+      <button className="btn-primary full-width" onClick={handleSave} disabled={!description || !amount || !category || !payer || participants.length === 0}>
         Save Expense
       </button>
     </div>

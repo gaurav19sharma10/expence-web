@@ -6,7 +6,7 @@ import { genCode } from './utils/helpers';
 
 export function FamilyScreen() {
   const { household, members, topups, settlements, activity } = useHousehold();
-  const { currentUser } = useAuth();
+  const { user: currentUser } = useAuth();
   const [showTopupModal, setShowTopupModal] = useState(false);
   const [topupAmount, setTopupAmount] = useState('');
   const [topupNote, setTopupNote] = useState('');

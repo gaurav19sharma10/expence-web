@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useHousehold } from './contexts/HouseholdContext';
 import { useAuth } from './contexts/AuthContext';
 import { formatMoney } from './utils/format';
@@ -89,8 +89,8 @@ export function TopUpScreen() {
               <button className="btn btn-primary" onClick={handleSave}>Add</button>
             </div>
           </div>
+          </div>
         )}
-      </div>
     </div>
   );
 }

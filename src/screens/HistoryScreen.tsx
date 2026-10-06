@@ -37,7 +37,6 @@ export function HistoryScreen() {
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         className="search-input"
-        placeholder="Search..."
       />
 
       <div className="filter-tabs">

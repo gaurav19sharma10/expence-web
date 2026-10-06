@@ -108,8 +108,8 @@ export function CategoriesScreen() {
               <button className="btn btn-primary" onClick={handleSave}>Save</button>
             </div>
           </div>
+          </div>
         )}
-      </div>
     </div>
   );
 }

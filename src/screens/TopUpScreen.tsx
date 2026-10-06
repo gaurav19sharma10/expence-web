@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { useHousehold } from './contexts/HouseholdContext';
-import { useAuth } from './contexts/AuthContext';
-import { formatMoney } from './utils/format';
+import { useHousehold } from '../contexts/HouseholdContext';
+import { useAuth } from '../contexts/AuthContext';
+import { formatMoney } from '../utils/format';
 
 export function TopUpScreen() {
   const { household, topups, addTopup, members } = useHousehold();

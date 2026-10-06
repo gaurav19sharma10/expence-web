@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from './contexts/AuthContext';
-import { useHousehold } from './contexts/HouseholdContext';
-import { useSettings } from './contexts/SettingsContext';
-import { formatMoney } from './utils/format';
+import { useAuth } from '../contexts/AuthContext';
+import { useHousehold } from '../contexts/HouseholdContext';
+import { useSettings } from '../contexts/SettingsContext';
+import { formatMoney } from '../utils/format';
 
 export function SettingsScreen() {
   const { user: currentUser, signOut, profile } = useAuth();

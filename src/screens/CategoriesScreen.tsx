@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { useHousehold } from './contexts/HouseholdContext';
-import { formatMoney } from './utils/format';
+import { useHousehold } from '../contexts/HouseholdContext';
+import { formatMoney } from '../utils/format';
 
 export function CategoriesScreen() {
   const { categories, addCategory, updateCategory, deleteCategory, household } = useHousehold();

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { useHousehold } from './contexts/HouseholdContext';
-import { formatMoney, formatDateShort, formatRelativeTime } from './utils/format';
-import { EmptyState } from './components/Common';
+import { useHousehold } from '../contexts/HouseholdContext';
+import { formatMoney, formatDateShort, formatRelativeTime } from '../utils/format';
+import { EmptyState } from '../components/Common';
 
 export function HistoryScreen() {
   const { expenses, settlements, members, household } = useHousehold();

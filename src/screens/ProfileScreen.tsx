@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { useAuth } from './contexts/AuthContext';
-import { useHousehold } from './contexts/HouseholdContext';
+import { useAuth } from '../contexts/AuthContext';
+import { useHousehold } from '../contexts/HouseholdContext';
 
 export function ProfileScreen() {
   const { profile, user, updateProfile, signOut } = useAuth();

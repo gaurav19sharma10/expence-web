@@ -12,8 +12,8 @@ const firebaseConfig = {
 };
 
 let app: FirebaseApp;
-let auth: Auth;
-let db: Firestore;
+let _auth: Auth;
+let _db: Firestore;
 
 export function getFirebaseApp(): FirebaseApp {
   if (!app) {
@@ -23,17 +23,17 @@ export function getFirebaseApp(): FirebaseApp {
 }
 
 export function getAuthInstance(): Auth {
-  if (!auth) {
-    auth = getAuth(getFirebaseApp());
+  if (!_auth) {
+    _auth = getAuth(getFirebaseApp());
   }
-  return auth;
+  return _auth;
 }
 
 export function getFirestoreInstance(): Firestore {
-  if (!db) {
-    db = getFirestore(getFirebaseApp());
+  if (!_db) {
+    _db = getFirestore(getFirebaseApp());
   }
-  return db;
+  return _db;
 }
 
 export const auth = getAuthInstance();

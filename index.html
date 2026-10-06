@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Expence — Shared Family Expenses</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div id="root"></div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut }
+  from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import { getFirestore, collection, collectionGroup, doc, getDoc, getDocs, addDoc, setDoc, updateDoc,
+  onSnapshot, query, where, orderBy, limit, writeBatch, serverTimestamp, Timestamp
+  from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+// ---------------------------------------------------------------------------
+// Firebase config. Replace appId with your Web app's registration ID from the
+// Firebase console (Project settings → Your apps → Web app → config). The other
+// values already match your Android project.
+// ---------------------------------------------------------------------------
+const firebaseConfig = {
+  apiKey: "AIzaSyBr3jEmFnTn9-go8qmDDtx5-sA381E4Vhc",
+  authDomain: "expence-rvs.firebaseapp.com",
+  projectId: "expence-rvs",
+  storageBucket: "expence-rvs.firebasestorage.app",
+  messagingSenderId: "654418160294",
+  appId: "1:654418160294:web:fbcc1fd2e537534b63a267"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+window.__FB = { app, auth, db, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged,
+  collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, writeBatch, onSnapshot, query, where, orderBy, limit,
+  serverTimestamp, Timestamp, collectionGroup };
+
+import('./app.js');
+</script>
+</body>
+</html>

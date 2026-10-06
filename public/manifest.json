@@ -1,0 +1,17 @@
+{
+  "name": "Expence",
+  "short_name": "Expence",
+  "description": "Shared family expense tracker",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7f6f3",
+  "theme_color": "#3d6b4f",
+  "icons": [
+    {
+      "src": "/vite.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

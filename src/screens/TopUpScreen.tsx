@@ -53,7 +53,7 @@ export function TopUpScreen() {
       <div className="card">
         <div className="muted small">Total in Pot</div>
         <div className="big">{formatMoney(totalPotAmount)}</div>
-        <button className="btn-primary full-width" style={{ marginTop: 12 }} onClick={() => setShowModal(true)}>
+        <button className="btn-primary full-width" style={{ marginTop: '12px' }} onClick={() => setShowModal(true)}>
           + Add Money
         </button>
       </div>

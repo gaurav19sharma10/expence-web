@@ -12,7 +12,7 @@ export function MembersScreen() {
       <div className="card">
         <div className="muted small">Invite Code</div>
         <div className="big code">{household?.inviteCode || '—'}</div>
-        <div className="row gap" style={{ marginTop: 12px }}>
+        <div className="row gap" style={{ marginTop: '12px' }}>
           <button className="btn" onClick={() => navigator.clipboard.writeText(household?.inviteCode || '')}>
             Copy
           </button>

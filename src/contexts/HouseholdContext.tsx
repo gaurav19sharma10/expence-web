@@ -79,6 +79,36 @@ const HouseholdContext = createContext<HouseholdContextType | undefined>(undefin
 
 const CACHE_KEY = 'expence_household_id';
 
+/**
+ * Refuses a payload Firestore would reject anyway, naming the offending path.
+ *
+ * Firestore validates a write before it reaches the network and throws
+ * "Unsupported field value: undefined". That message is unusable in one common
+ * case: when the undefined sits inside an array it names only the document, not
+ * the field, so the reader is left with no idea what to look at. The check here
+ * walks the payload and reports the exact path.
+ *
+ * `Object.getPrototypeOf(value) === Object.prototype` is what keeps it from
+ * walking into Firestore's own value objects.
+ */
+function assertNoUndefined(value: unknown, path = 'document'): void {
+  if (value === undefined) {
+    throw new Error(`Cannot save: ${path} has no value.`);
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => assertNoUndefined(item, `${path}[${index}]`));
+    return;
+  }
+  if (value !== null && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) {
+    for (const [key, entry] of Object.entries(value)) {
+      if (entry === undefined) {
+        throw new Error(`Cannot save: ${path}.${key} has no value.`);
+      }
+      assertNoUndefined(entry, `${path}.${key}`);
+    }
+  }
+}
+
 function generateInviteCode(): string {
   const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
   let s = '';
@@ -158,7 +188,23 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
       );
     };
 
-    feed('members', setMembers, orderBy('joinedAt'));
+    // Members are the one collection whose identity is the path rather than a
+    // field: the document is `members/{uid}` and the document itself never
+    // repeats the uid. Mapping the snapshot to `{ id }` alone left every member
+    // with an undefined `uid`, which is the key used by `splits`, by
+    // `participantIds`, by every balance map and by the Firestore rules' own
+    // membership checks.
+    //
+    // The visible symptom was a save that Firestore rejected with "Unsupported
+    // field value: undefined" naming no field at all, because the undefined sat
+    // inside `participantIds` -- and Firestore does not name a field for a bad
+    // array element. Everything else failed quietly behind it: no member names
+    // next to expenses, and "who owes whom" always empty.
+    feed(
+      'members',
+      (rows) => setMembers(rows.map((row) => ({ ...row, uid: row.id ?? row.uid }))),
+      orderBy('joinedAt'),
+    );
     feed('categories', setCategories, orderBy('order'));
     feed('expenses', setExpenses, orderBy('dateEpochDay', 'desc'), limit(500));
     feed('settlements', setSettlements, orderBy('dateEpochDay', 'desc'), limit(200));
@@ -392,11 +438,9 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
 
   const addCategory = async (data: CategoryFormData) => {
     if (!householdId) throw new Error('No household selected');
-    const ref = await addDoc(collection(db, 'households', householdId, 'categories'), {
-      ...data,
-      householdId,
-      order: categories.length,
-    });
+    const payload = { ...data, householdId, order: categories.length };
+    assertNoUndefined(payload, 'category');
+    const ref = await addDoc(collection(db, 'households', householdId, 'categories'), payload);
     return ref.id;
   };
 
@@ -413,7 +457,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   const addExpense = async (expenseData: any) => {
     if (!householdId) throw new Error('No household selected');
     const user = requireUser();
-    const ref = await addDoc(collection(db, 'households', householdId, 'expenses'), {
+    const payload = {
       ...expenseData,
       householdId,
       createdBy: user.uid,
@@ -421,13 +465,16 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
       updatedAt: Date.now(),
       version: 1,
       deletedAt: null,
-    });
+    };
+    assertNoUndefined(payload, 'expense');
+    const ref = await addDoc(collection(db, 'households', householdId, 'expenses'), payload);
     void logActivity('EXPENSE_ADDED', `Added ${expenseData.description}`, expenseData.baseAmountMinor, ref.id);
     return ref.id;
   };
 
   const updateExpense = async (id: string, data: any) => {
     if (!householdId) throw new Error('No household selected');
+    assertNoUndefined(data, 'expense');
     await updateDoc(doc(db, 'households', householdId, 'expenses', id), {
       ...data,
       updatedAt: Date.now(),
@@ -444,13 +491,15 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   const addSettlement = async (data: any) => {
     if (!householdId) throw new Error('No household selected');
     const user = requireUser();
-    const ref = await addDoc(collection(db, 'households', householdId, 'settlements'), {
+    const payload = {
       ...data,
       householdId,
       createdAt: Date.now(),
       createdBy: user.uid,
       deletedAt: null,
-    });
+    };
+    assertNoUndefined(payload, 'settlement');
+    const ref = await addDoc(collection(db, 'households', householdId, 'settlements'), payload);
     void logActivity('SETTLEMENT_ADDED', 'Recorded a settlement', data.baseAmountMinor, ref.id);
     return ref.id;
   };
@@ -469,14 +518,16 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     });
     if (total === 0) throw new Error('Nobody contributed.');
 
-    const ref = await addDoc(collection(db, 'households', householdId, 'topups'), {
+    const payload = {
       ...data,
       contributions: clean,
       baseAmountMinor: total,
       householdId,
       createdAt: Date.now(),
       createdBy: user.uid,
-    });
+    };
+    assertNoUndefined(payload, 'topup');
+    const ref = await addDoc(collection(db, 'households', householdId, 'topups'), payload);
     void logActivity('TOPUP_ADDED', 'Added to the family pot', total, ref.id);
     return ref.id;
   };

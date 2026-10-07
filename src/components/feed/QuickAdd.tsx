@@ -3,6 +3,8 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { VectorIcon } from '../vector/VectorIcons';
 import { Banner, Button, TextArea, TextInput } from '../ui/Field';
 import { NOTE_COLORS } from '../../lib/notes';
+import { SplitEditor } from './SplitEditor';
+import { allocate, allocateEqual, describeProblem, type SplitMode } from '../../lib/split';
 import { useAuth } from '../../contexts/AuthContext';
 import { useHousehold } from '../../contexts/HouseholdContext';
 import { formatMoney } from '../../utils/format';
@@ -32,6 +34,8 @@ export function QuickAdd({ onAdded }: { onAdded?: () => void }) {
   const [categoryId, setCategoryId] = useState('');
   const [color, setColor] = useState(NOTE_COLORS[0].hex);
   const [participants, setParticipants] = useState<string[]>([]);
+  const [splitMode, setSplitMode] = useState<SplitMode>('EQUAL');
+  const [splitInputs, setSplitInputs] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,6 +75,8 @@ export function QuickAdd({ onAdded }: { onAdded?: () => void }) {
     setNotes('');
     setError(null);
     setColor(NOTE_COLORS[0].hex);
+    setSplitMode('EQUAL');
+    setSplitInputs({});
   };
 
   const submit = async () => {
@@ -80,16 +86,20 @@ export function QuickAdd({ onAdded }: { onAdded?: () => void }) {
     if (!categoryId) return setError('Pick a category.');
     if (!participants.length) return setError('Choose at least one person to split with.');
 
+    // The allocator is the single source of truth for who owes what. It is the
+    // same routine the Android client runs, and the same tests cover both, so a
+    // note split here and the same note split on a phone produce identical
+    // shares -- which is what makes the ledger agree across devices.
+    const allocation = allocate(minor, participants, splitMode, splitInputs);
+    if (!allocation.ok) {
+      setError(describeProblem(allocation.problem, household?.baseCurrency || 'INR'));
+      return;
+    }
+    const splits = allocation.shares;
+
     setBusy(true);
     setError(null);
     try {
-      const share = Math.floor(minor / participants.length);
-      const remainder = minor - share * participants.length;
-      const splits: Record<string, number> = {};
-      participants.forEach((uid, i) => {
-        splits[uid] = share + (i < remainder ? 1 : 0);
-      });
-
       await addExpense({
         description: description.trim(),
         notes: notes.trim() || null,
@@ -98,7 +108,7 @@ export function QuickAdd({ onAdded }: { onAdded?: () => void }) {
         fxRate: 1,
         baseAmountMinor: minor,
         paidBy: user?.uid || '',
-        splitMode: 'EQUAL',
+        splitMode,
         splits,
         participantIds: participants,
         splitTotalMinor: minor,
@@ -251,29 +261,26 @@ export function QuickAdd({ onAdded }: { onAdded?: () => void }) {
                     <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted">
                       Split between
                     </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {members.map((m: any) => {
-                        const on = participants.includes(m.uid);
-                        return (
-                          <button
-                            key={m.uid}
-                            type="button"
-                            onClick={() =>
-                              setParticipants((current) =>
-                                on ? current.filter((u) => u !== m.uid) : [...current, m.uid],
-                              )
-                            }
-                            className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-all ${
-                              on
-                                ? 'border-brand/30 bg-brand-light text-brand'
-                                : 'border-line text-muted hover:bg-black/5'
-                            }`}
-                          >
-                            {m.displayName || m.email}
-                          </button>
+                    <SplitEditor
+                      members={members}
+                      participants={participants}
+                      mode={splitMode}
+                      inputs={splitInputs}
+                      totalMinor={Math.round(parseFloat(amount || '0') * 100) || 0}
+                      currency={household?.baseCurrency || 'INR'}
+                      onModeChange={setSplitMode}
+                      onParticipantsChange={setParticipants}
+                      onInputChange={(uid, value) =>
+                        setSplitInputs((current) => ({ ...current, [uid]: value }))
+                      }
+                      onBalanceExact={() => {
+                        const even = allocateEqual(
+                          Math.round(parseFloat(amount || '0') * 100) || 0,
+                          participants,
                         );
-                      })}
-                    </div>
+                        setSplitInputs(even.ok ? even.shares : {});
+                      }}
+                    />
                   </div>
                 )}
 

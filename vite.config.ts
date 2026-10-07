@@ -8,10 +8,7 @@ export default defineConfig({
     sourcemap: true,
     rollupOptions: {
       output: {
-        manualChunks: {
-          vendor: ['react', 'react-dom', 'firebase'],
-          utils: ['date-fns', 'clsx']
-        }
+        manualChunks: undefined
       }
     }
   },

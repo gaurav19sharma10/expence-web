@@ -5,6 +5,7 @@ import { Banner, Button, TextArea, TextInput } from '../ui/Field';
 import { NOTE_COLORS } from '../../lib/notes';
 import { SplitEditor } from './SplitEditor';
 import { allocate, allocateEqual, describeProblem, type SplitMode } from '../../lib/split';
+import { explainDenial, splitHeadroom } from '../../lib/rules';
 import { useAuth } from '../../contexts/AuthContext';
 import { useHousehold } from '../../contexts/HouseholdContext';
 import { formatMoney } from '../../utils/format';
@@ -34,6 +35,7 @@ export function QuickAdd({ onAdded }: { onAdded?: () => void }) {
   const [categoryId, setCategoryId] = useState('');
   const [color, setColor] = useState(NOTE_COLORS[0].hex);
   const [participants, setParticipants] = useState<string[]>([]);
+  const [payer, setPayer] = useState('');
   const [splitMode, setSplitMode] = useState<SplitMode>('EQUAL');
   const [splitInputs, setSplitInputs] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState(false);
@@ -47,6 +49,18 @@ export function QuickAdd({ onAdded }: { onAdded?: () => void }) {
       setParticipants(members.map((m: any) => m.uid));
     }
   }, [members, participants.length]);
+
+  // The payer defaults to whoever is logged in, and is then pinned into the
+  // split: the rules require the payer to be one of the participants, and an
+  // expense whose payer is not in their own split does not net out.
+  useEffect(() => {
+    if (user?.uid) setPayer((current) => current || user.uid);
+  }, [user?.uid]);
+
+  useEffect(() => {
+    if (!payer) return;
+    setParticipants((current) => (current.includes(payer) ? current : [...current, payer]));
+  }, [payer]);
 
   // Collapse on an outside click only while there is nothing typed, so a stray
   // tap cannot throw away a half-written expense.
@@ -84,7 +98,11 @@ export function QuickAdd({ onAdded }: { onAdded?: () => void }) {
     if (!description.trim()) return setError('Give the note a title.');
     if (!Number.isFinite(minor) || minor <= 0) return setError('Enter an amount greater than zero.');
     if (!categoryId) return setError('Pick a category.');
+    if (!payer) return setError('Choose who paid.');
     if (!participants.length) return setError('Choose at least one person to split with.');
+
+    const tooMany = splitHeadroom(participants.length);
+    if (tooMany) return setError(tooMany);
 
     // The allocator is the single source of truth for who owes what. It is the
     // same routine the Android client runs, and the same tests cover both, so a
@@ -97,6 +115,19 @@ export function QuickAdd({ onAdded }: { onAdded?: () => void }) {
     }
     const splits = allocation.shares;
 
+    const denial = explainDenial(
+      {
+        createdBy: user?.uid || '',
+        paidBy: payer,
+        baseAmountMinor: minor,
+        splitTotalMinor: minor,
+        splits,
+        participantIds: participants,
+      },
+      { authUid: user?.uid || '', memberIds: members.map((m: any) => m.uid) },
+    );
+    if (denial) return setError(denial);
+
     setBusy(true);
     setError(null);
     try {
@@ -107,7 +138,7 @@ export function QuickAdd({ onAdded }: { onAdded?: () => void }) {
         currency: household?.baseCurrency || 'INR',
         fxRate: 1,
         baseAmountMinor: minor,
-        paidBy: user?.uid || '',
+        paidBy: payer,
         splitMode,
         splits,
         participantIds: participants,
@@ -261,6 +292,34 @@ export function QuickAdd({ onAdded }: { onAdded?: () => void }) {
                     <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted">
                       Split between
                     </p>
+                    {splitHeadroom(participants.length) && (
+                      <p className="mb-2 rounded-xl border border-negative/25 bg-negative/10 px-3 py-2 text-[11px] font-semibold text-negative">
+                        {splitHeadroom(participants.length)}
+                      </p>
+                    )}
+                    {payer && (
+                      <div className="mb-2 flex items-center gap-2">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-muted">
+                          Paid by
+                        </span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {members.map((m: any) => (
+                            <button
+                              key={m.uid}
+                              type="button"
+                              onClick={() => setPayer(m.uid)}
+                              className={`rounded-full border px-3 py-1.5 text-[11px] font-bold transition-colors ${
+                                payer === m.uid
+                                  ? 'border-brand/30 bg-brand-light text-brand'
+                                  : 'border-line text-muted hover:bg-surface-sunken hover:text-body'
+                              }`}
+                            >
+                              {m.displayName || m.email}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     <SplitEditor
                       members={members}
                       participants={participants}

@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { VectorIcon } from '../vector/VectorIcons';
-import { FamilyPotIllustration } from '../vector/Illustrations';
+import { WalletIllustration } from '../vector/WalletIllustration';
 import { Modal } from '../ui/Modal';
 import { Banner, Button, Field, TextInput } from '../ui/Field';
 import { useAuth } from '../../contexts/AuthContext';
@@ -18,22 +18,25 @@ const MONTH_BUDGET_FALLBACK = 200000;
  * already subscribed to, so it updates as people log expenses on their own
  * devices. There is no separate fetch and no polling.
  */
-export function InsightsSidebar({ onNavigate }: { onNavigate: (screen: 'members' | 'history') => void }) {
+export function InsightsSidebar({
+  onNavigate,
+}: {
+  onNavigate: (screen: 'wallets' | 'members' | 'history') => void;
+}) {
   const { user } = useAuth();
   const {
     household,
     members,
     expenses,
     settlements,
-    topups,
+    wallets,
     categories,
-    addTopup,
+    creditWallet,
     addSettlement,
   } = useHousehold();
 
-  const [potOpen, setPotOpen] = useState(false);
-  const [potAmount, setPotAmount] = useState('');
-  const [potNote, setPotNote] = useState('');
+  const [creditOpen, setCreditOpen] = useState(false);
+  const [creditAmount, setCreditAmount] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,10 +45,18 @@ export function InsightsSidebar({ onNavigate }: { onNavigate: (screen: 'members'
   const nameOf = (uid: string) =>
     members.find((m: any) => m.uid === uid)?.displayName || 'Someone';
 
-  const potTotal = useMemo(
-    () => topups.reduce((sum: number, t: any) => sum + (t.baseAmountMinor || 0), 0),
-    [topups],
-  );
+  // Allowance left across the family. A wallet that has gone negative is
+  // reported separately rather than folded in here, because "total allowance" and
+  // "somebody is over" are different facts.
+  const { walletTotal, overdrawn } = useMemo(() => {
+    const balanceOf = (uid: string) =>
+      Number(wallets.find((w: any) => w.uid === uid)?.balanceMinor) || 0;
+    const rows = members.map((m: any) => ({ uid: m.uid, name: m.displayName || m.email, balance: balanceOf(m.uid) }));
+    return {
+      walletTotal: rows.reduce((sum, row) => sum + row.balance, 0),
+      overdrawn: rows.filter((row) => row.balance < 0),
+    };
+  }, [wallets, members]);
 
   const live = useMemo(
     () => (row: any) => !row.deletedAt || row.deletedAt === null,
@@ -107,8 +118,10 @@ export function InsightsSidebar({ onNavigate }: { onNavigate: (screen: 'members'
     });
   }, [categoryTotals, categorySpend]);
 
-  const submitPot = async () => {
-    const minor = Math.round(parseFloat(potAmount) * 100);
+  const isOwner = household?.ownerUid === user?.uid;
+
+  const submitCredit = async () => {
+    const minor = Math.round(parseFloat(creditAmount) * 100);
     if (!user || minor <= 0) {
       setError('Enter an amount greater than zero.');
       return;
@@ -116,17 +129,11 @@ export function InsightsSidebar({ onNavigate }: { onNavigate: (screen: 'members'
     setBusy(true);
     setError(null);
     try {
-      await addTopup({
-        contributions: { [user.uid]: minor },
-        currencyCode: currency,
-        note: potNote || null,
-        dateEpochDay: Math.floor(Date.now() / 86_400_000),
-      });
-      setPotOpen(false);
-      setPotAmount('');
-      setPotNote('');
+      await creditWallet(user.uid, minor, 'Topped up from Expence');
+      setCreditOpen(false);
+      setCreditAmount('');
     } catch (err: any) {
-      setError(err?.message || 'Could not add to the pot.');
+      setError(err?.message || 'Could not top up the wallet.');
     } finally {
       setBusy(false);
     }
@@ -158,26 +165,42 @@ export function InsightsSidebar({ onNavigate }: { onNavigate: (screen: 'members'
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <span className="text-[11px] font-bold uppercase tracking-wider text-faint">
-              Family pot
+              Wallets
             </span>
-            <h3 className="mt-1 text-2xl font-bold tracking-tight text-body">
-              {formatMoney(potTotal, currency)}
+            <h3 className={`mt-1 text-2xl font-bold tracking-tight ${walletTotal < 0 ? 'text-negative' : 'text-body'}`}>
+              {formatMoney(Math.abs(walletTotal), currency)}
             </h3>
-            <p className="mt-0.5 text-xs font-medium text-muted">Set aside to spend as a group</p>
+            <p className="mt-0.5 text-xs font-medium text-muted">Allowance left in the family</p>
           </div>
           <div className="-mr-1 -mt-1 size-14 shrink-0">
-            <FamilyPotIllustration size={56} />
+            <WalletIllustration size={56} />
           </div>
         </div>
 
+        {overdrawn.length > 0 && (
+          <div className="mt-3 flex items-start gap-2 rounded-2xl border border-negative/25 bg-negative/10 p-3">
+            <VectorIcon name="alert" size={15} color="var(--color-negative)" className="mt-0.5" />
+            <p className="text-[11px] leading-snug text-negative">
+              <strong className="font-bold">{overdrawn.map((o) => o.name).join(', ')}</strong>{' '}
+              {overdrawn.length === 1 ? 'is' : 'are'} over their allowance.
+            </p>
+          </div>
+        )}
+
         <div className="mt-4 flex items-center justify-between border-t border-line pt-3">
-          <span className="text-xs font-medium text-muted">
-            {topups.length} contribution{topups.length === 1 ? '' : 's'}
-          </span>
-          <Button size="sm" onClick={() => setPotOpen(true)}>
-            <VectorIcon name="plus" size={13} />
-            Add money
-          </Button>
+          <button
+            type="button"
+            onClick={() => onNavigate('wallets')}
+            className="text-xs font-bold text-brand hover:underline"
+          >
+            Manage wallets
+          </button>
+          {isOwner && (
+            <Button size="sm" onClick={() => setCreditOpen(true)}>
+              <VectorIcon name="plus" size={13} />
+              Top up mine
+            </Button>
+          )}
         </div>
       </section>
 
@@ -321,7 +344,7 @@ export function InsightsSidebar({ onNavigate }: { onNavigate: (screen: 'members'
         </section>
       )}
 
-      <Modal open={potOpen} onClose={() => setPotOpen(false)} title="Add to the family pot">
+      <Modal open={creditOpen} onClose={() => setCreditOpen(false)} title="Top up your wallet">
         <div className="space-y-4">
           {error && <Banner tone="error">{error}</Banner>}
           <Field label={`Amount (${currency})`} icon="wallet">
@@ -330,24 +353,17 @@ export function InsightsSidebar({ onNavigate }: { onNavigate: (screen: 'members'
               inputMode="decimal"
               step="0.01"
               min="0"
-              value={potAmount}
-              onChange={(e) => setPotAmount(e.target.value)}
+              value={creditAmount}
+              onChange={(e) => setCreditAmount(e.target.value)}
               placeholder="0.00"
               autoFocus
             />
           </Field>
-          <Field label="Note (optional)" icon="edit">
-            <TextInput
-              value={potNote}
-              onChange={(e) => setPotNote(e.target.value)}
-              placeholder="Pocket money"
-            />
-          </Field>
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setPotOpen(false)}>
+            <Button variant="ghost" onClick={() => setCreditOpen(false)}>
               Cancel
             </Button>
-            <Button busy={busy} onClick={() => void submitPot()}>
+            <Button busy={busy} onClick={() => void submitCredit()}>
               Add money
             </Button>
           </div>

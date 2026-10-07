@@ -5,6 +5,7 @@ import {
   getDoc,
   getDocs,
   addDoc,
+  setDoc,
   updateDoc,
   deleteDoc,
   onSnapshot,
@@ -18,6 +19,7 @@ import {
 } from 'firebase/firestore';
 import { auth, db } from '../services/firebase';
 import { useAuth } from './AuthContext';
+import { formatMoney } from '../utils/format';
 import { CategoryFormData } from '../types';
 
 interface HouseholdContextType {
@@ -28,9 +30,13 @@ interface HouseholdContextType {
   expenses: any[];
   settlements: any[];
   topups: any[];
+  wallets: any[];
+  walletTxns: any[];
   activity: any[];
   loading: boolean;
   error: string | null;
+  creditWallet: (uid: string, amountMinor: number, note: string) => Promise<void>;
+  transferWallet: (fromUid: string, toUid: string, amountMinor: number, note: string) => Promise<void>;
   createHousehold: (name: string, baseCurrency: string) => Promise<string>;
   joinHousehold: (code: string) => Promise<void>;
   leaveHousehold: () => Promise<void>;
@@ -125,6 +131,8 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   const [expenses, setExpenses] = useState<any[]>([]);
   const [settlements, setSettlements] = useState<any[]>([]);
   const [topups, setTopups] = useState<any[]>([]);
+  const [wallets, setWallets] = useState<any[]>([]);
+  const [walletTxns, setWalletTxns] = useState<any[]>([]);
   const [activity, setActivity] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -141,6 +149,8 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     setExpenses([]);
     setSettlements([]);
     setTopups([]);
+    setWallets([]);
+    setWalletTxns([]);
     setActivity([]);
   };
 
@@ -209,6 +219,8 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     feed('expenses', setExpenses, orderBy('dateEpochDay', 'desc'), limit(500));
     feed('settlements', setSettlements, orderBy('dateEpochDay', 'desc'), limit(200));
     feed('topups', setTopups, orderBy('dateEpochDay', 'desc'), limit(100));
+    feed('wallets', setWallets);
+    feed('walletTxns', setWalletTxns, orderBy('at', 'desc'), limit(100));
     feed('activity', setActivity, orderBy('at', 'desc'), limit(60));
   };
 
@@ -255,6 +267,23 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   };
 
   const uid = () => requireUser().uid;
+
+  /**
+   * The rules only let the household owner credit or transfer a wallet, so the
+   * client says so before the write rather than after a PERMISSION_DENIED.
+   */
+  const requireOwner = () => {
+    const user = requireUser();
+    if (!isOwner(user.uid)) {
+      throw new Error('Only the head of the family can move money between wallets.');
+    }
+    return user;
+  };
+
+  const isOwner = (uidToCheck: string) => household?.ownerUid === uidToCheck;
+
+  const formatMinor = (minor: number) =>
+    formatMoney(Math.abs(minor), household?.baseCurrency || 'INR');
 
   /**
    * One batch, because a household whose owner document is missing is a
@@ -454,10 +483,31 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     await deleteDoc(doc(db, 'households', householdId, 'categories', id));
   };
 
+  /**
+   * Adds an expense and moves every charged member's wallet in the same commit.
+   *
+   * One batch, not two writes, for the obvious reason: if the expense lands and
+   * the wallet does not, the allowance silently stops matching what was spent and
+   * nobody finds out until the balance is wrong. Firestore applies a batch
+   * atomically, so either both happened or neither did.
+   *
+   * The balances are *decreased* rather than blocked at zero, which is a product
+   * decision: a member who is out of allowance may still log what they actually
+   * spent, and their balance goes negative and is flagged to whoever runs the
+   * family. Refusing the expense would mean the real purchase is not recorded
+   * anywhere, which is worse for a ledger.
+   *
+   * The rules permit exactly this and nothing more: a member may lower their own
+   * balance and may not raise it, so a client cannot mint its own allowance.
+   */
   const addExpense = async (expenseData: any) => {
     if (!householdId) throw new Error('No household selected');
     const user = requireUser();
-    const payload = {
+
+    const expenseRef = doc(collection(db, 'households', householdId, 'expenses'));
+    const batch = writeBatch(db);
+
+    batch.set(expenseRef, {
       ...expenseData,
       householdId,
       createdBy: user.uid,
@@ -465,11 +515,152 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
       updatedAt: Date.now(),
       version: 1,
       deletedAt: null,
-    };
+    });
+
+    const splits: Record<string, number> = expenseData.splits || {};
+    let walletMoves = 0;
+
+    for (const [uid, share] of Object.entries(splits)) {
+      const amount = Math.trunc(Number(share) || 0);
+      if (amount === 0) continue;
+      const walletRef = doc(db, 'households', householdId, 'wallets', uid);
+      const current = wallets.find((w: any) => w.uid === uid);
+      const next = (Number(current?.balanceMinor) || 0) - amount;
+
+      batch.set(
+        walletRef,
+        { uid, balanceMinor: next, updatedAt: Date.now(), updatedBy: user.uid },
+        { merge: true },
+      );
+      walletMoves++;
+    }
+
+    if (walletMoves > 0) {
+      batch.set(doc(collection(db, 'households', householdId, 'walletTxns')), {
+        householdId,
+        kind: 'SPEND',
+        actorUid: user.uid,
+        description: expenseData.description,
+        amountMinor: Math.abs(expenseData.baseAmountMinor || 0),
+        detail: splits,
+        at: Date.now(),
+      });
+    }
+
+    const payload = { ...expenseData, householdId, createdBy: user.uid };
     assertNoUndefined(payload, 'expense');
-    const ref = await addDoc(collection(db, 'households', householdId, 'expenses'), payload);
-    void logActivity('EXPENSE_ADDED', `Added ${expenseData.description}`, expenseData.baseAmountMinor, ref.id);
-    return ref.id;
+    assertNoUndefined(splits, 'expense.splits');
+
+    await batch.commit();
+
+    const spentOn: string[] = [];
+    for (const [uid, share] of Object.entries(splits)) {
+      const after = (Number(wallets.find((w: any) => w.uid === uid)?.balanceMinor) || 0) - Math.trunc(Number(share) || 0);
+      if (after < 0) spentOn.push(uid);
+    }
+
+    void logActivity(
+      'EXPENSE_ADDED',
+      `Added expense: ${expenseData.description}`,
+      expenseData.baseAmountMinor,
+      expenseRef.id,
+    );
+
+    // The alert the head is meant to see. Written as activity so it lands in the
+    // same realtime feed the head already watches, rather than depending on a
+    // push channel this project does not have.
+    if (spentOn.length > 0) {
+      void logActivity(
+        'WALLET_OVERSPENT',
+        `${spentOn.map((uid) => nameFor(uid)).join(', ')} went over their allowance on "${expenseData.description}"`,
+      );
+    }
+
+    return expenseRef.id;
+  };
+
+  const nameFor = (uid: string) =>
+    members.find((m: any) => m.uid === uid)?.displayName || 'Someone';
+
+  /**
+   * Puts money into a member's wallet. Owner only.
+   *
+   * Credit and ledger row in one batch for the same reason as above: a balance
+   * that moved without a row explaining it cannot be audited.
+   */
+  const creditWallet = async (uid: string, amountMinor: number, note: string) => {
+    if (!householdId) throw new Error('No household selected');
+    const owner = requireOwner();
+    const amount = Math.trunc(amountMinor);
+    if (!(amount > 0)) throw new Error('Enter an amount greater than zero.');
+
+    const current = wallets.find((w: any) => w.uid === uid);
+    const next = (Number(current?.balanceMinor) || 0) + amount;
+
+    const batch = writeBatch(db);
+    batch.set(
+      doc(db, 'households', householdId, 'wallets', uid),
+      { uid, balanceMinor: next, updatedAt: Date.now(), updatedBy: owner.uid, grantedBy: owner.uid },
+      { merge: true },
+    );
+    batch.set(doc(collection(db, 'households', householdId, 'walletTxns')), {
+      householdId,
+      kind: 'CREDIT',
+      actorUid: owner.uid,
+      toUid: uid,
+      amountMinor: amount,
+      note: note.trim() || null,
+      at: Date.now(),
+    });
+    await batch.commit();
+
+    void logActivity('WALLET_CREDITED', `Added ${formatMinor(amount)} to ${nameFor(uid)}'s wallet`, amount);
+  };
+
+  /**
+   * Moves money from one member's wallet to another. Owner only.
+   *
+   * Both balances and both ledger rows go in one batch, so a transfer is never
+   * half-applied.
+   */
+  const transferWallet = async (fromUid: string, toUid: string, amountMinor: number, note: string) => {
+    if (!householdId) throw new Error('No household selected');
+    const owner = requireOwner();
+    const amount = Math.trunc(amountMinor);
+    if (!(amount > 0)) throw new Error('Enter an amount greater than zero.');
+    if (fromUid === toUid) throw new Error('Pick two different people.');
+
+    const from = (Number(wallets.find((w: any) => w.uid === fromUid)?.balanceMinor) || 0) - amount;
+    const to = (Number(wallets.find((w: any) => w.uid === toUid)?.balanceMinor) || 0) + amount;
+
+    const batch = writeBatch(db);
+    batch.set(
+      doc(db, 'households', householdId, 'wallets', fromUid),
+      { uid: fromUid, balanceMinor: from, updatedAt: Date.now(), updatedBy: owner.uid },
+      { merge: true },
+    );
+    batch.set(
+      doc(db, 'households', householdId, 'wallets', toUid),
+      { uid: toUid, balanceMinor: to, updatedAt: Date.now(), updatedBy: owner.uid, grantedBy: owner.uid },
+      { merge: true },
+    );
+    batch.set(doc(collection(db, 'households', householdId, 'walletTxns')), {
+      householdId,
+      kind: 'TRANSFER',
+      actorUid: owner.uid,
+      fromUid,
+      toUid,
+      amountMinor: amount,
+      note: note.trim() || null,
+      at: Date.now(),
+    });
+    await batch.commit();
+
+    void logActivity(
+      'WALLET_TRANSFERED',
+      `Moved ${formatMinor(amount)} from ${nameFor(fromUid)} to ${nameFor(toUid)}`,
+      amount,
+    );
   };
 
   const updateExpense = async (id: string, data: any) => {
@@ -577,9 +768,13 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
         expenses,
         settlements,
         topups,
+        wallets,
+        walletTxns,
         activity,
         loading,
         error,
+        creditWallet,
+        transferWallet,
         createHousehold,
         joinHousehold,
         leaveHousehold,

@@ -25,6 +25,7 @@ const NAV: { key: Screen; label: string; icon: string }[] = [
   { key: 'history', label: 'History', icon: 'clock' },
   { key: 'insights', label: 'Insights', icon: 'chart' },
   { key: 'members', label: 'Family', icon: 'users' },
+  { key: 'wallets', label: 'Wallets', icon: 'wallet' },
   { key: 'settings', label: 'Settings', icon: 'sliders' },
 ];
 

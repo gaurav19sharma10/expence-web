@@ -5,4 +5,11 @@
  * it, and because the shell uses it as state. Keeping it here means the desktop
  * and mobile navigation cannot drift into offering different destinations.
  */
-export type Screen = 'home' | 'history' | 'insights' | 'members' | 'settings' | 'profile';
+export type Screen =
+  | 'home'
+  | 'history'
+  | 'insights'
+  | 'members'
+  | 'wallets'
+  | 'settings'
+  | 'profile';

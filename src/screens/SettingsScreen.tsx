@@ -3,10 +3,11 @@ import { VectorIcon } from '../components/vector/VectorIcons';
 import { useAuth } from '../contexts/AuthContext';
 import { useHousehold } from '../contexts/HouseholdContext';
 import { useSettings } from '../contexts/SettingsContext';
+import { formatMoney } from '../utils/format';
 
 export function SettingsScreen({ onNavigate }: { onNavigate: (screen: 'profile') => void }) {
   const { signOut } = useAuth();
-  const { household, members, expenses, topups } = useHousehold();
+  const { household, members, expenses, wallets } = useHousehold();
   const { themeMode, setThemeMode, darkIntensity, setDarkIntensity } = useSettings();
 
   return (
@@ -62,7 +63,19 @@ export function SettingsScreen({ onNavigate }: { onNavigate: (screen: 'profile')
         <Row icon="home" label="Household" value={household?.name || '—'} />
         <Row icon="users" label="Members" value={String(members.length)} />
         <Row icon="receipt" label="Expenses" value={String(expenses.filter((e: any) => !e.deletedAt).length)} />
-        <Row icon="wallet" label="Pot contributions" value={String(topups.length)} last />
+        <Row
+          icon="wallet"
+          label="Allowance left"
+          value={formatMoney(
+            members.reduce(
+              (sum: number, m: any) =>
+                sum + (Number(wallets.find((w: any) => w.uid === m.uid)?.balanceMinor) || 0),
+              0,
+            ),
+            household?.baseCurrency || 'INR',
+          )}
+          last
+        />
       </section>
 
       <section className="overflow-hidden rounded-3xl border border-line bg-surface shadow-sm">

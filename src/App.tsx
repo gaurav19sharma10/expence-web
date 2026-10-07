@@ -9,6 +9,7 @@ import { HomeScreen } from './screens/HomeScreen';
 import { HistoryScreen } from './screens/HistoryScreen';
 import { InsightsScreen } from './screens/InsightsScreen';
 import { MembersScreen } from './screens/MembersScreen';
+import { WalletsScreen } from './screens/WalletsScreen';
 import { CategoriesScreen } from './screens/CategoriesScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
@@ -59,6 +60,7 @@ function Shell() {
                 {screen === 'history' && <HistoryScreen query={query} />}
                 {screen === 'insights' && <InsightsScreen />}
                 {screen === 'members' && <MembersScreen />}
+                {screen === 'wallets' && <WalletsScreen />}
                 {screen === 'profile' && <ProfileScreen />}
                 {screen === 'settings' && (
                   <>
@@ -83,7 +85,7 @@ function Shell() {
             )}
           </div>
 
-          {withSidebar && !showCategories && (
+          {(withSidebar || screen === 'wallets') && !showCategories && (
             <InsightsSidebar onNavigate={(next) => setScreen(next)} />
           )}
         </div>

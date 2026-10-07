@@ -5,11 +5,28 @@ export interface UserProfile {
   displayCurrency: string;
   householdIds: string[];
   profileCompleted: boolean;
-  countryIso?: string;
-  dateOfBirth?: string;
-  avatarPath?: string;
+  countryIso?: string | null;
+  dateOfBirth?: string | null;
+  mobile?: string | null;
+  mobileCountryIso?: string | null;
+  avatarPath?: string | null;
   themeMode?: 'light' | 'dark' | 'system';
   darkIntensity?: number;
+}
+
+/**
+ * The wire name of a role. Persisted so the security rules can compare it
+ * against the literal string, and kept in one place so an enum round trip
+ * cannot drift between the two clients.
+ */
+export type MemberRole = 'OWNER' | 'MEMBER' | 'MEMBER_LEFT';
+
+export interface CategoryFormData {
+  name: string;
+  icon: string;
+  color: string;
+  isSystem?: boolean;
+  monthlyBudgetMinor: number;
 }
 
 export interface Member {

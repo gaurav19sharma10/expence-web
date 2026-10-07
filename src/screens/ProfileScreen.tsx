@@ -17,12 +17,12 @@ export function ProfileScreen() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await window.__FB?.updateProfile({
+      await updateProfile({
         displayName: name,
-        dateOfBirth: dob,
-        mobile,
+        dateOfBirth: dob || null,
+        mobile: mobile || null,
         mobileCountryIso: country,
-        completed: true,
+        profileCompleted: true,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -115,7 +115,7 @@ export function ProfileScreen() {
 
       <div className="card danger-zone">
         <h3>Danger Zone</h3>
-        <button className="btn-danger full-width" onClick={() => window.__FB?.auth?.signOut()}>
+        <button className="btn-danger full-width" onClick={() => signOut()}>
           Sign Out
         </button>
       </div>

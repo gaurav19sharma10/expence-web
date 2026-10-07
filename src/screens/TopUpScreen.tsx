@@ -1,47 +1,39 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useHousehold } from '../contexts/HouseholdContext';
 import { useAuth } from '../contexts/AuthContext';
 import { formatMoney } from '../utils/format';
 
 export function TopUpScreen() {
-  const { household, topups, addTopup, members } = useHousehold();
+  const { household, topups, addTopup } = useHousehold();
   const { user: currentUser } = useAuth();
   const [showModal, setShowModal] = useState(false);
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
-  const [contributions, setContributions] = useState<Record<string, number>>({});
+  const [error, setError] = useState('');
 
   const totalPot = topups.reduce((sum, t) => sum + (t.baseAmountMinor || 0), 0);
-
-  useEffect(() => {
-    if (currentUser) {
-      setContributions({ [currentUser.uid]: 0 });
-    }
-  }, [currentUser]);
 
   const handleSave = async () => {
     if (!amount) return;
     const amountMinor = Math.round(parseFloat(amount) * 100);
     if (amountMinor <= 0) return;
-    
-    // Simple equal contribution
-    const contributionsMap: Record<string, number> = {};
-    members.forEach(m => contributionsMap[m.uid] = 0);
-    contributionsMap[currentUser?.uid || ''] = parseFloat(amount) * 100;
+    if (!currentUser) return;
 
-    await window.__FB?.firestore?.collection(`households/${window.__FB?.householdId}/topups`).add({
-      contributions: contributionsMap,
-      baseAmountMinor: parseFloat(amount) * 100,
-      currencyCode: window.__FB?.household?.baseCurrency || 'INR',
-      note: note || null,
-      dateEpochDay: Math.floor(Date.now() / 86400000),
-      createdAt: Date.now(),
-      createdBy: currentUser?.uid,
-    });
-    
-    setShowModal(false);
-    setAmount('');
-    setNote('');
+    setError('');
+    try {
+      await addTopup({
+        contributions: { [currentUser.uid]: amountMinor },
+        currencyCode: household?.baseCurrency || 'INR',
+        note: note || null,
+        dateEpochDay: Math.floor(Date.now() / 86400000),
+      });
+      setShowModal(false);
+      setAmount('');
+      setNote('');
+    } catch (err: any) {
+      console.error('Failed to add to pot:', err);
+      setError(err?.message || 'Could not add to the pot.');
+    }
   };
 
   const totalPotAmount = topups.reduce((sum, t) => sum + (t.baseAmountMinor || 0), 0);

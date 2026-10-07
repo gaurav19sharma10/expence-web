@@ -32,12 +32,12 @@ export function ProfileSetupScreen({ onComplete }: { onComplete: () => void }) {
         countryIso: country,
         mobile: mobile || null,
         mobileCountryIso: mobile ? country : null,
-        completed,
+        profileCompleted: completed,
       });
-      // Refresh profile
-      window.location.reload();
-    } catch (error) {
+      onComplete();
+    } catch (error: any) {
       console.error('Failed to save profile:', error);
+      setError(error?.message || 'Could not save your profile. Please try again.');
     }
   };
 
@@ -46,7 +46,7 @@ export function ProfileSetupScreen({ onComplete }: { onComplete: () => void }) {
       <div className="center-card">
         <h2>{profile?.profileCompleted ? 'Edit Profile' : 'Complete Your Profile'}</h2>
         <p className="subtitle">
-          {completed ? 'Update your information' : 'This helps personalize your experience'}
+          {profile?.profileCompleted ? 'Update your information' : 'This helps personalize your experience'}
         </p>
 
         <div className="form-group">

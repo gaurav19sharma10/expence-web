@@ -1,13 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useHousehold } from '../contexts/HouseholdContext';
 import { useAuth } from '../contexts/AuthContext';
-import { formatMoney } from '../utils/format';
-import { genCode } from '../utils/helpers';
 
-export function AddExpenseScreen() {
-  const { household, members, categories } = useHousehold();
+export function AddExpenseScreen({ onDone }: { onDone?: () => void } = {}) {
+  const { household, members, categories, addExpense } = useHousehold();
   const { user: currentUser } = useAuth();
-  
+
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('');
@@ -16,6 +14,7 @@ export function AddExpenseScreen() {
   const [merchant, setMerchant] = useState('');
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (members.length > 0 && !payer) {
@@ -26,52 +25,47 @@ export function AddExpenseScreen() {
 
   const handleSave = async () => {
     if (!amount || !category || !payer || participants.length === 0) return;
-    
+
+    setLoading(true);
+    setError('');
     const amountMinor = Math.round(parseFloat(amount) * 100);
     if (amountMinor <= 0) return;
 
-    // Equal split
-    const n = participants.length;
+    // Equal split: the remainder is handed out one unit at a time so the
+    // shares always add up to the amount, which the rules check.
     const baseShare = Math.floor(amountMinor / participants.length);
-    let rem = amountMinor - baseShare * participants.length;
+    const remainder = amountMinor - baseShare * participants.length;
     const splits: Record<string, number> = {};
     participants.forEach((uid, i) => {
-      splits[uid] = baseShare + (i < rem ? 1 : 0);
+      splits[uid] = baseShare + (i < remainder ? 1 : 0);
     });
 
-    const householdId = window.__FB?.householdId;
-    if (!householdId) return;
-
     try {
-      const id = crypto.randomUUID();
-      await window.__FB?.firestore?.collection(`households/${householdId}/expenses`).doc(id).set({
+      await addExpense({
         description: description || 'Expense',
-        notes: null,
-        amountMinor: parseFloat(amount) * 100,
+        notes: notes || null,
+        amountMinor,
         currency: household?.baseCurrency || 'INR',
         fxRate: 1,
-        baseAmountMinor: Math.round(parseFloat(amount) * 100),
+        baseAmountMinor: amountMinor,
         paidBy: payer,
-        createdBy: window.__FB?.auth?.currentUser?.uid,
         splitMode: 'EQUAL',
         splits,
         participantIds: participants,
-        splitTotalMinor: Math.round(parseFloat(amount) * 100),
+        splitTotalMinor: amountMinor,
         categoryId: category,
         dateEpochDay: Math.floor(Date.now() / 86400000),
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        version: 1,
         receiptPath: null,
         merchant: merchant || null,
         recurringId: null,
         sequence: null,
-        deletedAt: null,
       });
-      // Navigate back
-      window.history.back();
-    } catch (error) {
+      onDone?.();
+    } catch (error: any) {
       console.error('Failed to save expense:', error);
+      setError(error?.message || 'Could not save the expense. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -162,8 +156,10 @@ export function AddExpenseScreen() {
         />
       </div>
 
-      <button className="btn-primary full-width" onClick={handleSave} disabled={!description || !amount || !category || !payer || participants.length === 0}>
-        Save Expense
+      {error && <div className="error-message">{error}</div>}
+
+      <button className="btn-primary full-width" onClick={handleSave} disabled={loading || !description || !amount || !category || !payer || participants.length === 0}>
+        {loading ? 'Saving...' : 'Save Expense'}
       </button>
     </div>
   );

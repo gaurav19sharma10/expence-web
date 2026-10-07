@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useAuth } from './contexts/AuthContext';
 import { useHousehold } from './contexts/HouseholdContext';
 import { useSettings } from './contexts/SettingsContext';
@@ -16,22 +16,23 @@ import { TopUpScreen } from './screens/TopUpScreen';
 import { CategoriesScreen } from './screens/CategoriesScreen';
 import { MembersScreen } from './screens/MembersScreen';
 
-const CURRENCIES = ['INR', 'USD', 'EUR', 'GBP', 'AED', 'SGD'];
+type Screen =
+  | 'home'
+  | 'history'
+  | 'add'
+  | 'insights'
+  | 'family'
+  | 'settings'
+  | 'profile'
+  | 'topup'
+  | 'categories'
+  | 'members';
 
 function App() {
-  const { user, profile, loading: authLoading, signOut } = useAuth();
-  const { householdId, loading: householdLoading } = useHousehold();
+  const { user, profile, loading: authLoading, profileLoading } = useAuth();
+  const { householdId } = useHousehold();
   const { themeMode } = useSettings();
-  const [profileSetup, setProfileSetup] = useState(false);
-  const [showOnboarding, setShowOnboarding] = useState(false);
-  const [currentScreen, setCurrentScreen] = useState<'home' | 'history' | 'add' | 'insights' | 'family' | 'settings' | 'profile' | 'addExpense' | 'topup' | 'categories' | 'members' | 'settings'>('home');
-
-  useEffect(() => {
-    const savedTheme = localStorage.getItem('themeMode') as 'light' | 'dark' | 'system' || 'system';
-    document.documentElement.classList.toggle('dark', 
-      themeMode === 'dark' || (themeMode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
-    );
-  }, []);
+  const [currentScreen, setCurrentScreen] = useState<Screen>('home');
 
   if (authLoading) return <div className="loading-screen">Loading...</div>;
 
@@ -39,16 +40,18 @@ function App() {
     return <LoginScreen />;
   }
 
-  if (profileSetup) {
-    return <ProfileSetupScreen onComplete={() => setProfileSetup(false)} />;
-  }
-
-  if (showOnboarding) {
-    return <OnboardingScreen onComplete={() => setShowOnboarding(false)} />;
-  }
+  // Signing in is not the same as having a profile: the document still has to
+  // be read before the screen can tell a finished profile from a new account.
+  if (profileLoading) return <div className="loading-screen">Loading...</div>;
 
   if (!profile?.profileCompleted) {
-    return <ProfileSetupScreen onComplete={() => setProfileSetup(false)} />;
+    return <ProfileSetupScreen onComplete={() => setCurrentScreen('home')} />;
+  }
+
+  // A finished profile with no family behind it is the state every new account
+  // is in, and the only screen that can resolve it is onboarding.
+  if (!householdId) {
+    return <OnboardingScreen onComplete={() => setCurrentScreen('home')} />;
   }
 
   return (
@@ -65,12 +68,11 @@ function App() {
       <main className="main-content">
         {currentScreen === 'home' && <HomeScreen />}
         {currentScreen === 'history' && <HistoryScreen />}
-        {currentScreen === 'add' && <AddExpenseScreen />}
+        {currentScreen === 'add' && <AddExpenseScreen onDone={() => setCurrentScreen('home')} />}
         {currentScreen === 'insights' && <InsightsScreen />}
         {currentScreen === 'family' && <FamilyScreen />}
         {currentScreen === 'settings' && <SettingsScreen />}
         {currentScreen === 'profile' && <ProfileScreen />}
-        {currentScreen === 'addExpense' && <AddExpenseScreen />}
         {currentScreen === 'topup' && <TopUpScreen />}
         {currentScreen === 'categories' && <CategoriesScreen />}
         {currentScreen === 'members' && <MembersScreen />}

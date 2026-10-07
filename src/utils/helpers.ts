@@ -30,5 +30,12 @@ export function genCode(): string {
 }
 
 export function esc(s: string): string {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&', '<': '<', '>': '>', '"': '"', "'": ''' }[c]!));
+  const entities: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  };
+  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => entities[c]);
 }

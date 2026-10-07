@@ -76,8 +76,8 @@ interface TopUpCardProps {
 export function TopUpCard({ topup, members, currency, onDelete }: TopUpCardProps) {
   const contributors = Object.entries(topup.contributions || {})
     .map(([uid, amount]) => {
-      const member = topup.members?.find((m: any) => m.uid === uid);
-      return `${member?.displayName || uid}: ${formatMoney(amount, currency)}`;
+      const member = members.find((m: any) => m.uid === uid);
+      return `${member?.displayName || uid}: ${formatMoney(Number(amount) || 0, currency)}`;
     })
     .join(', ');
 

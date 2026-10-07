@@ -1,32 +1,24 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import {
   collection,
   doc,
   getDoc,
   getDocs,
-  setDoc,
+  addDoc,
   updateDoc,
+  deleteDoc,
   onSnapshot,
   query,
-  where,
   orderBy,
   limit,
   writeBatch,
-  Timestamp,
-  DocumentSnapshot,
+  arrayUnion,
+  arrayRemove,
+  Unsubscribe,
 } from 'firebase/firestore';
-import { getFirestoreInstance } from '../services/firebase';
-import {
-  Household,
-  Member,
-  Category,
-  Expense,
-  Settlement,
-  TopUp,
-  ActivityEntry,
-  MemberRole,
-  CategoryFormData,
-} from '../types';
+import { auth, db } from '../services/firebase';
+import { useAuth } from './AuthContext';
+import { CategoryFormData } from '../types';
 
 interface HouseholdContextType {
   householdId: string | null;
@@ -42,7 +34,7 @@ interface HouseholdContextType {
   createHousehold: (name: string, baseCurrency: string) => Promise<string>;
   joinHousehold: (code: string) => Promise<void>;
   leaveHousehold: () => Promise<void>;
-  addCategory: (data: any) => Promise<string>;
+  addCategory: (data: CategoryFormData) => Promise<string>;
   updateCategory: (id: string, data: any) => Promise<void>;
   deleteCategory: (id: string) => Promise<void>;
   addExpense: (expense: any) => Promise<string>;
@@ -54,9 +46,48 @@ interface HouseholdContextType {
   refreshData: () => void;
 }
 
+/**
+ * The seventeen categories a new family starts with.
+ *
+ * Seeded rather than left empty, because a family that has to configure
+ * categories before its first expense gets logged will not configure them, and
+ * the first expense is the one that gets somebody to try the app.
+ *
+ * Mirrors the Android client so both apps show the same household the same way.
+ */
+const DEFAULT_CATEGORIES: CategoryFormData[] = [
+  { name: 'Groceries', icon: 'groceries', color: '#0D6745', monthlyBudgetMinor: 0 },
+  { name: 'Food & dining', icon: 'food', color: '#158055', monthlyBudgetMinor: 0 },
+  { name: 'Transport', icon: 'transport', color: '#2563EB', monthlyBudgetMinor: 0 },
+  { name: 'Home', icon: 'home', color: '#0E7490', monthlyBudgetMinor: 0 },
+  { name: 'Shopping', icon: 'shopping', color: '#7C3AED', monthlyBudgetMinor: 0 },
+  { name: 'Bills & utilities', icon: 'utilities', color: '#B45309', monthlyBudgetMinor: 0 },
+  { name: 'Health', icon: 'health', color: '#BE185D', monthlyBudgetMinor: 0 },
+  { name: 'Education', icon: 'education', color: '#4D7C0F', monthlyBudgetMinor: 0 },
+  { name: 'Entertainment', icon: 'entertainment', color: '#C2410C', monthlyBudgetMinor: 0 },
+  { name: 'Travel', icon: 'travel', color: '#2F9B6B', monthlyBudgetMinor: 0 },
+  { name: 'Family', icon: 'family', color: '#9AD3B4', monthlyBudgetMinor: 0 },
+  { name: 'Gifts', icon: 'gift', color: '#E5484D', monthlyBudgetMinor: 0 },
+  { name: 'Pets', icon: 'pets', color: '#8E9AAF', monthlyBudgetMinor: 0 },
+  { name: 'Insurance', icon: 'other', color: '#64748B', monthlyBudgetMinor: 0 },
+  { name: 'Phone & internet', icon: 'phone', color: '#0EA5E9', monthlyBudgetMinor: 0 },
+  { name: 'Savings', icon: 'other', color: '#10B981', monthlyBudgetMinor: 0 },
+  { name: 'Other', icon: 'other', color: '#7C877F', monthlyBudgetMinor: 0 },
+];
+
 const HouseholdContext = createContext<HouseholdContextType | undefined>(undefined);
 
+const CACHE_KEY = 'expence_household_id';
+
+function generateInviteCode(): string {
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let s = '';
+  for (let i = 0; i < 6; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  return s;
+}
+
 export function HouseholdProvider({ children }: { children: React.ReactNode }) {
+  const { profile } = useAuth();
   const [householdId, setHouseholdId] = useState<string | null>(null);
   const [household, setHousehold] = useState<any | null>(null);
   const [members, setMembers] = useState<any[]>([]);
@@ -68,208 +99,12 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const db = window.__FB?.db;
+  const listeners = useRef<Unsubscribe[]>([]);
+  const displayName = profile?.displayName || '';
 
-  useEffect(() => {
-    // Load household from localStorage or profile
-    const savedId = localStorage.getItem('expence_household_id');
-    if (savedId) {
-      setHouseholdId(savedId);
-      loadHouseholdData(savedId);
-    } else {
-      setLoading(false);
-    }
-  }, []);
-
-  const loadHouseholdData = async (hid: string) => {
-    if (!db) return;
-    try {
-      setLoading(true);
-      setHouseholdId(hid);
-      localStorage.setItem('expence_household_id', hid);
-
-      // Load household
-      const householdSnap = await getDoc(doc(window.__FB?.db, 'households', hid));
-      if (householdSnap.exists()) {
-        setHousehold({ id: householdSnap.id, ...householdSnap.data() });
-      }
-
-      // Subscribe to real-time updates
-      const unsubMembers = onSnapshot(
-        query(collection(window.__FB?.db, 'households', hid, 'members'), orderBy('joinedAt')),
-        (snapshot) => {
-          setMembers(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
-        }
-      );
-
-      const unsubCategories = onSnapshot(
-        query(collection(window.__FB?.db, 'households', hid, 'categories'), orderBy('order')),
-        (snapshot) => {
-          setCategories(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
-        }
-      );
-
-      const unsubExpenses = onSnapshot(
-        query(
-          collection(window.__FB?.db, 'households', hid, 'expenses'),
-          orderBy('dateEpochDay', 'desc'),
-          limit(500)
-        ),
-        (snapshot) => {
-          setExpenses(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
-        }
-      );
-
-      const unsubSettlements = onSnapshot(
-        query(
-          collection(window.__FB?.db, 'households', hid, 'settlements'),
-          orderBy('dateEpochDay', 'desc'),
-          limit(200)
-        ),
-        (snapshot) => {
-          setSettlements(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
-        }
-      );
-
-      const unsubTopups = onSnapshot(
-        query(
-          collection(window.__FB?.db, 'households', hid, 'topups'),
-          orderBy('dateEpochDay', 'desc'),
-          limit(100)
-        ),
-        (snapshot) => {
-          setTopups(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
-        }
-      );
-
-      const unsubActivity = onSnapshot(
-        query(
-          collection(window.__FB?.db, 'households', hid, 'activity'),
-          orderBy('at', 'desc'),
-          limit(60)
-        ),
-        (snapshot) => {
-          setActivity(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
-        }
-      );
-
-      setLoading(false);
-
-      return () => {
-        unsubMembers();
-        unsubCategories();
-        unsubExpenses();
-        unsubSettlements();
-        unsubTopups();
-        unsubActivity();
-      };
-    } catch (error) {
-      console.error('Error loading household:', error);
-      setError('Failed to load household data');
-      setLoading(false);
-    }
-  };
-
-  const createHousehold = async (name: string, baseCurrency: string): Promise<string> => {
-    const auth = window.__FB?.auth;
-    const user = window.__FB?.auth?.currentUser;
-    if (!user) throw new Error('Not authenticated');
-
-    const hid = crypto.randomUUID();
-    const code = generateInviteCode();
-    const now = Date.now();
-
-    const batch = writeBatch(window.__FB?.db);
-
-    batch.set(doc(window.__FB?.db, 'households', hid), {
-      name,
-      baseCurrency,
-      ownerUid: user.uid,
-      inviteCode: code,
-      monthlyBudgetMinor: 0,
-    });
-
-    batch.set(doc(window.__FB?.db, `households/${hid}/members/${user.uid}`), {
-      displayName: window.__FB?.profile?.displayName || user.displayName || 'User',
-      email: user.email,
-      photoURL: null,
-      role: 'OWNER',
-      joinedAt: now,
-      defaultWeight: 1,
-      monthlyBudgetMinor: 0,
-      inviteCode: null,
-    });
-
-    batch.set(doc(window.__FB?.db, 'invites', code), {
-      householdId: hid,
-      householdName: name,
-      active: true,
-      createdBy: user.uid,
-    });
-
-    batch.update(doc(window.__FB?.db, 'users', user.uid), {
-      householdIds: [hid],
-    });
-
-    await batch.commit();
-
-    setHouseholdId(hid);
-    localStorage.setItem('expence_household_id', hid);
-    loadHouseholdData(hid);
-
-    return hid;
-  };
-
-  const joinHousehold = async (code: string) => {
-    const user = window.__FB?.auth?.currentUser;
-    if (!user) throw new Error('Not authenticated');
-
-    const inv = await getDoc(doc(window.__FB?.db, 'invites', code.toUpperCase()));
-    if (!inv.exists() || !inv.data().active) {
-      throw new Error('Invalid or expired invite code');
-    }
-
-    const hid = inv.data().householdId;
-    const now = Date.now();
-
-    const batch = writeBatch(window.__FB?.db);
-    batch.set(doc(window.__FB?.db, `households/${hid}/members/${user.uid}`), {
-      displayName: window.__FB?.profile?.displayName || user.displayName || 'User',
-      email: user.email,
-      photoURL: null,
-      role: 'MEMBER',
-      joinedAt: now,
-      defaultWeight: 1,
-      monthlyBudgetMinor: 0,
-      inviteCode: code,
-    });
-
-    batch.update(doc(window.__FB?.db, 'invites', code), { active: false });
-    batch.update(doc(window.__FB?.db, 'users', user.uid), {
-      householdIds: [hid],
-    });
-
-    await batch.commit();
-
-    setHouseholdId(hid);
-    localStorage.setItem('expence_household_id', hid);
-    loadHouseholdData(hid);
-  };
-
-  const leaveHousehold = async () => {
-    if (!householdId) return;
-    const user = window.__FB?.auth?.currentUser;
-    if (!user) return;
-
-    await updateDoc(doc(window.__FB?.db, `households/${householdId}/members/${user.uid}`), {
-      role: 'MEMBER_LEFT',
-    });
-    await updateDoc(doc(window.__FB?.db, 'users', user.uid), {
-      householdIds: [],
-    });
-
-    setHouseholdId(null);
-    localStorage.removeItem('expence_household_id');
+  const clearData = () => {
+    listeners.current.forEach((off) => off());
+    listeners.current = [];
     setHousehold(null);
     setMembers([]);
     setCategories([]);
@@ -279,9 +114,263 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     setActivity([]);
   };
 
+  const closeListeners = () => {
+    listeners.current.forEach((off) => off());
+    listeners.current = [];
+  };
+
+  /**
+   * Subscribes to one household and keeps the subscriptions alive until the next
+   * one replaces them.
+   *
+   * They used to be returned from an async function nobody awaited, so every
+   * switch of family left its previous listeners attached -- and the reads they
+   * performed belonged to a household the user had already left.
+   */
+  const subscribe = (hid: string) => {
+    closeListeners();
+
+    listeners.current.push(
+      onSnapshot(
+        doc(db, 'households', hid),
+        (snap) => {
+          if (snap.exists()) setHousehold({ id: snap.id, ...snap.data() });
+          else clearData();
+        },
+        (err) => {
+          console.error('Household read failed:', err);
+          setError('Could not read this family. It may have been removed.');
+        },
+      ),
+    );
+
+    const feed = (
+      path: string,
+      apply: (rows: any[]) => void,
+      ...constraints: any[]
+    ) => {
+      listeners.current.push(
+        onSnapshot(
+          query(collection(db, 'households', hid, path), ...constraints),
+          (snap) => apply(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+          (err) => console.error(`${path} read failed:`, err),
+        ),
+      );
+    };
+
+    feed('members', setMembers, orderBy('joinedAt'));
+    feed('categories', setCategories, orderBy('order'));
+    feed('expenses', setExpenses, orderBy('dateEpochDay', 'desc'), limit(500));
+    feed('settlements', setSettlements, orderBy('dateEpochDay', 'desc'), limit(200));
+    feed('topups', setTopups, orderBy('dateEpochDay', 'desc'), limit(100));
+    feed('activity', setActivity, orderBy('at', 'desc'), limit(60));
+  };
+
+  const selectHousehold = (hid: string | null) => {
+    if (hid) {
+      localStorage.setItem(CACHE_KEY, hid);
+      setHouseholdId(hid);
+      subscribe(hid);
+    } else {
+      localStorage.removeItem(CACHE_KEY);
+      setHouseholdId(null);
+      clearData();
+    }
+    setLoading(false);
+  };
+
+  /**
+   * Picks the household to show.
+   *
+   * It is taken from the profile rather than from the cached id, because the
+   * cache is only a hint: a fresh browser has none, and a stale one would read
+   * a family the user is no longer in -- which the rules refuse, leaving the
+   * screen permanently empty with no error anywhere.
+   */
+  useEffect(() => {
+    const ids = profile?.householdIds || [];
+    const cached = localStorage.getItem(CACHE_KEY);
+    const next = ids.find((id) => id === cached) || ids[0] || null;
+
+    if (next === householdId) {
+      setLoading(false);
+      return;
+    }
+    selectHousehold(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.householdIds?.join(','), profile?.profileCompleted]);
+
+  useEffect(() => closeListeners, []);
+
+  const requireUser = () => {
+    const user = auth.currentUser;
+    if (!user) throw new Error('Not signed in');
+    return user;
+  };
+
+  /**
+   * One batch, because a household whose owner document is missing is a
+   * household nobody can administer.
+   *
+   * The profile write is an `update` naming three fields rather than a `set`:
+   * the rules diff an update against the stored document, so a `set` would
+   * carry every field it does not name in that diff and be rejected.
+   */
+  const createHousehold = async (name: string, baseCurrency: string): Promise<string> => {
+    const user = requireUser();
+    const hid = doc(collection(db, 'households')).id;
+    const code = generateInviteCode();
+    const now = Date.now();
+
+    const batch = writeBatch(db);
+
+    batch.set(doc(db, 'households', hid), {
+      name,
+      baseCurrency,
+      ownerUid: user.uid,
+      inviteCode: code,
+      monthlyBudgetMinor: 0,
+    });
+
+    batch.set(doc(db, 'households', hid, 'members', user.uid), {
+      displayName: displayName || user.displayName || 'User',
+      email: user.email,
+      photoURL: null,
+      role: 'OWNER',
+      joinedAt: now,
+      defaultWeight: 1,
+      monthlyBudgetMinor: 0,
+      inviteCode: null,
+    });
+
+    batch.set(doc(db, 'invites', code), {
+      householdId: hid,
+      householdName: name,
+      active: true,
+      createdBy: user.uid,
+    });
+
+    batch.update(doc(db, 'users', user.uid), {
+      displayName: displayName || user.displayName || 'User',
+      displayCurrency: baseCurrency,
+      householdIds: arrayUnion(hid),
+    });
+
+    await batch.commit();
+
+    selectHousehold(hid);
+    await seedCategories(hid);
+    return hid;
+  };
+
+  /**
+   * Writes the defaults once.
+   *
+   * Guarded by checking whether any category already exists, so opening the app
+   * a second time does not produce a second set -- and a family who has
+   * deliberately deleted some of the defaults does not get them all back.
+   */
+  const seedCategories = async (hid: string) => {
+    try {
+      const existing = await getDocs(collection(db, 'households', hid, 'categories'));
+      if (!existing.empty) return;
+
+      const batch = writeBatch(db);
+      DEFAULT_CATEGORIES.forEach((cat, index) => {
+        batch.set(doc(collection(db, 'households', hid, 'categories')), {
+          ...cat,
+          isSystem: true,
+          householdId: hid,
+          order: index,
+        });
+      });
+      await batch.commit();
+    } catch (err) {
+      // Non-fatal: the family exists, and Categories can add the rest by hand.
+      console.error('Could not seed default categories:', err);
+    }
+  };
+
+  /**
+   * Joins by writing the caller's own member document.
+   *
+   * The code travels on that document for exactly one write. It is *not* retired
+   * here: retiring an invite is an owner-only write, so including it made the
+   * whole batch fail with PERMISSION_DENIED and nobody could ever join a
+   * family.
+   */
+  const joinHousehold = async (rawCode: string) => {
+    const user = requireUser();
+    const code = rawCode.trim().toUpperCase();
+
+    const inv = await getDoc(doc(db, 'invites', code));
+    if (!inv.exists() || inv.data().active !== true) {
+      throw new Error('That code is not valid any more. Ask for a new one.');
+    }
+    const hid = inv.data().householdId as string;
+
+    await setMemberAndJoin(hid, code);
+
+    selectHousehold(hid);
+  };
+
+  const setMemberAndJoin = async (hid: string, code: string | null) => {
+    const user = requireUser();
+    const batch = writeBatch(db);
+
+    batch.set(doc(db, 'households', hid, 'members', user.uid), {
+      displayName: displayName || user.displayName || 'User',
+      email: user.email,
+      photoURL: null,
+      role: 'MEMBER',
+      joinedAt: Date.now(),
+      defaultWeight: 1,
+      monthlyBudgetMinor: 0,
+      inviteCode: code,
+    });
+
+    batch.update(doc(db, 'users', user.uid), {
+      householdIds: arrayUnion(hid),
+    });
+
+    await batch.commit();
+  };
+
+  const leaveHousehold = async () => {
+    if (!householdId) return;
+    const user = requireUser();
+
+    const batch = writeBatch(db);
+
+    // An owner hands the household to the next-longest-standing member before
+    // going, or the family is left with nobody who can administer it.
+    const memberSnap = await getDoc(doc(db, 'households', householdId, 'members', user.uid));
+    if (memberSnap.data()?.role === 'OWNER') {
+      const roster = await getDocs(
+        query(
+          collection(db, 'households', householdId, 'members'),
+          orderBy('joinedAt'),
+        ),
+      );
+      const heir = roster.docs.find((d) => d.id !== user.uid);
+      if (heir) {
+        batch.update(heir.ref, { role: 'OWNER' });
+        batch.update(doc(db, 'households', householdId), { ownerUid: heir.id });
+      }
+    }
+
+    batch.delete(doc(db, 'households', householdId, 'members', user.uid));
+    batch.update(doc(db, 'users', user.uid), {
+      householdIds: arrayRemove(householdId),
+    });
+    await batch.commit();
+
+    selectHousehold(null);
+  };
+
   const addCategory = async (data: CategoryFormData) => {
-    if (!householdId) throw new Error('No household');
-    const ref = await addDoc(collection(window.__FB?.db, `households/${householdId}/categories`), {
+    if (!householdId) throw new Error('No household selected');
+    const ref = await addDoc(collection(db, 'households', householdId, 'categories'), {
       ...data,
       householdId,
       order: categories.length,
@@ -290,94 +379,119 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updateCategory = async (id: string, data: any) => {
-    if (!householdId) throw new Error('No household');
-    await updateDoc(doc(window.__FB?.db, `households/${householdId}/categories`, id), data);
+    if (!householdId) throw new Error('No household selected');
+    await updateDoc(doc(db, 'households', householdId, 'categories', id), data);
   };
 
   const deleteCategory = async (id: string) => {
-    if (!householdId) throw new Error('No household');
-    await updateDoc(doc(window.__FB?.db, `households/${householdId}/categories`, id), {
-      deletedAt: Date.now(),
-    });
+    if (!householdId) throw new Error('No household selected');
+    await deleteDoc(doc(db, 'households', householdId, 'categories', id));
   };
 
   const addExpense = async (expenseData: any) => {
-    if (!householdId) throw new Error('No household');
-    const ref = await addDoc(collection(window.__FB?.db, `households/${householdId}/expenses`), {
+    if (!householdId) throw new Error('No household selected');
+    const user = requireUser();
+    const ref = await addDoc(collection(db, 'households', householdId, 'expenses'), {
       ...expenseData,
       householdId,
+      createdBy: user.uid,
       createdAt: Date.now(),
       updatedAt: Date.now(),
       version: 1,
       deletedAt: null,
     });
-    await logActivity('EXPENSE_ADDED', `Added expense: ${expenseData.description}`, expenseData.baseAmountMinor);
+    void logActivity('EXPENSE_ADDED', `Added ${expenseData.description}`, expenseData.baseAmountMinor, ref.id);
     return ref.id;
   };
 
   const updateExpense = async (id: string, data: any) => {
-    if (!householdId) throw new Error('No household');
-    await updateDoc(doc(window.__FB?.db, `households/${householdId}/expenses`, id), {
+    if (!householdId) throw new Error('No household selected');
+    await updateDoc(doc(db, 'households', householdId, 'expenses', id), {
       ...data,
       updatedAt: Date.now(),
     });
   };
 
   const deleteExpense = async (id: string) => {
-    if (!householdId) throw new Error('No household');
-    await updateDoc(doc(window.__FB?.db, `households/${householdId}/expenses`, id), {
+    if (!householdId) throw new Error('No household selected');
+    await updateDoc(doc(db, 'households', householdId, 'expenses', id), {
       deletedAt: Date.now(),
     });
   };
 
   const addSettlement = async (data: any) => {
-    if (!householdId) throw new Error('No household');
-    const ref = await addDoc(collection(window.__FB?.db, `households/${householdId}/settlements`), {
+    if (!householdId) throw new Error('No household selected');
+    const user = requireUser();
+    const ref = await addDoc(collection(db, 'households', householdId, 'settlements'), {
       ...data,
       householdId,
       createdAt: Date.now(),
-      createdBy: window.__FB?.auth?.currentUser?.uid,
+      createdBy: user.uid,
       deletedAt: null,
     });
-    await logActivity('SETTLEMENT_ADDED', 'Recorded a settlement', data.baseAmountMinor);
+    void logActivity('SETTLEMENT_ADDED', 'Recorded a settlement', data.baseAmountMinor, ref.id);
     return ref.id;
   };
 
   const addTopup = async (data: any) => {
-    if (!householdId) throw new Error('No household');
-    const ref = await addDoc(collection(window.__FB?.db, `households/${householdId}/topups`), {
+    if (!householdId) throw new Error('No household selected');
+    const user = requireUser();
+    const clean: Record<string, number> = {};
+    let total = 0;
+    Object.entries(data.contributions || {}).forEach(([uid, minor]) => {
+      const value = Number(minor) || 0;
+      if (value > 0) {
+        clean[uid] = value;
+        total += value;
+      }
+    });
+    if (total === 0) throw new Error('Nobody contributed.');
+
+    const ref = await addDoc(collection(db, 'households', householdId, 'topups'), {
       ...data,
+      contributions: clean,
+      baseAmountMinor: total,
       householdId,
       createdAt: Date.now(),
-      createdBy: window.__FB?.auth?.currentUser?.uid,
+      createdBy: user.uid,
     });
-    await logActivity('TOPUP_ADDED', 'Added to family pot', data.baseAmountMinor);
+    void logActivity('TOPUP_ADDED', 'Added to the family pot', total, ref.id);
     return ref.id;
   };
 
-  const logActivity = async (kind: string, summary: string, amountMinor?: number, targetId?: string) => {
+  /**
+   * The audit trail is best-effort.
+   *
+   * Refusing to record an expense because a log line failed would be a much
+   * worse outcome than a missing log line, so a rejection here is swallowed.
+   */
+  const logActivity = async (
+    kind: string,
+    summary: string,
+    amountMinor?: number,
+    targetId?: string,
+  ) => {
     if (!householdId) return;
-    await addDoc(collection(window.__FB?.db, `households/${householdId}/activity`), {
-      householdId,
-      kind,
-      actorUid: window.__FB?.auth?.currentUser?.uid,
-      actorName: window.__FB?.profile?.displayName || 'Unknown',
-      summary,
-      amountMinor: amountMinor || null,
-      targetId: targetId || null,
-      at: Date.now(),
-    });
+    const user = auth.currentUser;
+    if (!user) return;
+    try {
+      await addDoc(collection(db, 'households', householdId, 'activity'), {
+        householdId,
+        kind,
+        actorUid: user.uid,
+        actorName: displayName || user.displayName || 'Someone',
+        summary,
+        amountMinor: amountMinor ?? null,
+        targetId: targetId ?? null,
+        at: Date.now(),
+      });
+    } catch (err) {
+      console.error('Activity log failed:', err);
+    }
   };
 
   const refreshData = () => {
-    if (householdId) loadHouseholdData(householdId);
-  };
-
-  const generateInviteCode = () => {
-    const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-    let s = '';
-    for (let i = 0; i < 6; i++) s += Math.floor(Math.random() * 32).toString(32).toUpperCase();
-    return s;
+    if (householdId) subscribe(householdId);
   };
 
   return (

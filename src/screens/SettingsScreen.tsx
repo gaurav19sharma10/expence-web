@@ -7,7 +7,7 @@ import { formatMoney } from '../utils/format';
 export function SettingsScreen() {
   const { user: currentUser, signOut, profile } = useAuth();
   const { household, members } = useHousehold();
-  const { themeMode, darkIntensity, setThemeMode, setDarkIntensity, appLockEnabled, setAppLockEnabled, verifyPin } = useSettings();
+  const { themeMode, darkIntensity, setThemeMode, setDarkIntensity, appLockEnabled, toggleAppLock, verifyPin } = useSettings();
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [leavePin, setLeavePin] = useState('');
   const [leaveError, setLeaveError] = useState('');
@@ -82,7 +82,14 @@ export function SettingsScreen() {
             <input
               type="checkbox"
               checked={appLockEnabled}
-              onChange={(e) => setAppLockEnabled(e.target.checked)}
+              onChange={(e) => {
+              const on = e.target.checked;
+              // Enabling needs a PIN to lock against, which is why this asks
+              // rather than just flipping the flag.
+              const pin = on ? window.prompt('Choose a 4-digit PIN') : undefined;
+              if (on && !pin) return;
+              toggleAppLock(on, pin ?? undefined);
+            }}
             />
             <span>Require PIN to open app</span>
           </label>
@@ -120,7 +127,7 @@ export function SettingsScreen() {
       <section className="section">
         <h3>Account</h3>
         <div className="card">
-          <button className="btn-danger" onClick={() => window.__FB?.auth?.signOut()}>
+          <button className="btn-danger" onClick={() => signOut()}>
             Sign Out
           </button>
         </div>

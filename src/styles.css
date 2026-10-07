@@ -254,3 +254,22 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
 .muted { color: var(--muted); }
 .small { font-size: 13px; }
 .big { font-size: 24px; font-weight: 700; }
+/* Error boundary: keeps a crash readable instead of leaving a blank page. */
+.error-detail {
+  background: var(--primary-2);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 12px;
+  margin: 12px 0;
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  text-align: left;
+}
+.loading-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  color: var(--muted);
+}

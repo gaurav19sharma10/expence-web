@@ -14,6 +14,7 @@ export function LoginScreen() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setLoading(true);
     try {
       if (isSignUp) {
         await window.__FB?.auth?.createUserWithEmailAndPassword(email, password);
@@ -22,6 +23,8 @@ export function LoginScreen() {
       }
     } catch (error: any) {
       setError(error.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -38,7 +41,7 @@ export function LoginScreen() {
         
         {error && <div className="error-message">{error}</div>}
 
-        <form onSubmit={(e) => { e.preventDefault(); }}>
+        <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label htmlFor="email">Email</label>
             <input

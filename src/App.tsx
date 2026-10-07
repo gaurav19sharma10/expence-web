@@ -12,11 +12,9 @@ import { SettingsScreen } from './screens/SettingsScreen';
 import { ProfileSetupScreen } from './screens/ProfileSetupScreen';
 import { OnboardingScreen } from './screens/OnboardingScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
-import { AddExpenseScreen } from './screens/AddExpenseScreen';
 import { TopUpScreen } from './screens/TopUpScreen';
 import { CategoriesScreen } from './screens/CategoriesScreen';
 import { MembersScreen } from './screens/MembersScreen';
-import { SettingsScreen } from './screens/SettingsScreen';
 
 const CURRENCIES = ['INR', 'USD', 'EUR', 'GBP', 'AED', 'SGD'];
 
@@ -35,7 +33,7 @@ function App() {
     );
   }, []);
 
-  if (loading) return <div className="loading-screen">Loading...</div>;
+  if (authLoading) return <div className="loading-screen">Loading...</div>;
 
   if (!user) {
     return <LoginScreen />;

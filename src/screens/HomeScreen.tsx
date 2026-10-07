@@ -28,7 +28,7 @@ export function HomeScreen() {
     <div className="home-screen">
       <section className="hero">
         <h1>{greeting},</h1>
-        <h2>{useAuth().profile?.displayName || 'You'}</h2>
+        <h2>{profile?.displayName || 'You'}</h2>
         <p className="subtitle">Let's talk about today's expense.</p>
       </section>
 

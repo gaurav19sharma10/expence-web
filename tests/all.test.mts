@@ -7,3 +7,4 @@
  */
 import './split.test.mts';
 import './rules.test.mts';
+import './search.test.mts';

@@ -5,6 +5,7 @@ import { Button } from '../components/ui/Field';
 import { useAuth } from '../contexts/AuthContext';
 import { useHousehold } from '../contexts/HouseholdContext';
 import { formatMoney } from '../utils/format';
+import { matches, parseQuery } from '../lib/search';
 
 /**
  * History, grouped by day.
@@ -17,17 +18,29 @@ export function HistoryScreen({ query }: { query: string }) {
   const [payer, setPayer] = useState<string>('all');
   const currency = household?.baseCurrency || 'INR';
 
+  const parsed = useMemo(() => parseQuery(query), [query]);
+
   const days = useMemo(() => {
-    const q = query.trim().toLowerCase();
     const rows = expenses
       .filter((e: any) => !e.deletedAt)
       .filter((e: any) => (payer === 'all' ? true : e.paidBy === payer))
       .filter((e: any) => {
-        if (!q) return true;
+        if (!query.trim()) return true;
         const cat = categories.find((c: any) => c.id === e.categoryId);
-        return [e.description, e.merchant, e.notes, cat?.name]
-          .filter(Boolean)
-          .some((v: string) => v.toLowerCase().includes(q));
+        return matches(
+          {
+            id: e.id,
+            description: e.description,
+            notes: e.notes,
+            merchant: e.merchant,
+            categoryName: cat?.name,
+            payerName: members.find((m: any) => m.uid === e.paidBy)?.displayName,
+            baseAmountMinor: e.baseAmountMinor,
+            currency: e.currency,
+            dateEpochDay: e.dateEpochDay,
+          },
+          parsed,
+        ).matched;
       });
 
     const grouped = new Map<number, any[]>();
@@ -43,7 +56,7 @@ export function HistoryScreen({ query }: { query: string }) {
         list,
         total: list.reduce((sum, e) => sum + (e.baseAmountMinor || 0), 0),
       }));
-  }, [expenses, categories, payer, query]);
+  }, [expenses, categories, members, payer, query, parsed]);
 
   if (days.length === 0) {
     return (

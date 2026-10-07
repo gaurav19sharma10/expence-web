@@ -186,6 +186,30 @@ export function AppHeader({ screen, onNavigate, query, onQueryChange }: Props) {
                       <VectorIcon name="sparkles" size={15} />
                       {themeMode === 'dark' ? 'Light mode' : 'Dark mode'}
                     </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onNavigate('limits');
+                        setMenuOpen(false);
+                      }}
+                      className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-body transition-colors hover:bg-surface-sunken"
+                    >
+                      <VectorIcon name="scale" size={15} color="var(--color-brand)" />
+                      Spending limits
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onNavigate('wallets');
+                        setMenuOpen(false);
+                      }}
+                      className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-body transition-colors hover:bg-surface-sunken"
+                    >
+                      <VectorIcon name="wallet" size={15} color="var(--color-brand)" />
+                      Wallets
+                    </button>
                   </div>
 
                   <div className="border-t border-line pt-1.5">

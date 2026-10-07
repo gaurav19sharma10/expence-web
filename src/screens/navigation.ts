@@ -11,5 +11,6 @@ export type Screen =
   | 'insights'
   | 'members'
   | 'wallets'
+  | 'limits'
   | 'settings'
   | 'profile';

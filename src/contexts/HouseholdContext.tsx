@@ -32,6 +32,10 @@ interface HouseholdContextType {
   topups: any[];
   wallets: any[];
   walletTxns: any[];
+  limits: any[];
+  /** True while any write is still waiting on the network. */
+  offline: boolean;
+  setLimit: (uid: string, categoryId: string, capMinor: number) => Promise<void>;
   activity: any[];
   loading: boolean;
   error: string | null;
@@ -133,6 +137,10 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   const [topups, setTopups] = useState<any[]>([]);
   const [wallets, setWallets] = useState<any[]>([]);
   const [walletTxns, setWalletTxns] = useState<any[]>([]);
+  const [limits, setLimits] = useState<any[]>([]);
+  const [offline, setOffline] = useState(
+    typeof navigator !== 'undefined' ? navigator.onLine === false : false,
+  );
   const [activity, setActivity] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -151,6 +159,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     setTopups([]);
     setWallets([]);
     setWalletTxns([]);
+    setLimits([]);
     setActivity([]);
   };
 
@@ -220,6 +229,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     feed('settlements', setSettlements, orderBy('dateEpochDay', 'desc'), limit(200));
     feed('topups', setTopups, orderBy('dateEpochDay', 'desc'), limit(100));
     feed('wallets', setWallets);
+    feed('limits', setLimits);
     feed('walletTxns', setWalletTxns, orderBy('at', 'desc'), limit(100));
     feed('activity', setActivity, orderBy('at', 'desc'), limit(60));
   };
@@ -259,6 +269,38 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   }, [profile?.householdIds?.join(','), profile?.profileCompleted]);
 
   useEffect(() => closeListeners, []);
+
+  /**
+   * Whether the device is offline.
+   *
+   * Firestore already queues writes while the connection is down and replays them
+   * on reconnect, so nothing here is being held back -- the flag exists so the
+   * user is told, because a note that "did not save" and a note that saved but
+   * has not synced yet look identical otherwise.
+   */
+  useEffect(() => {
+    const on = () => setOffline(false);
+    const off = () => setOffline(true);
+    window.addEventListener('online', on);
+    window.addEventListener('offline', off);
+    return () => {
+      window.removeEventListener('online', on);
+      window.removeEventListener('offline', off);
+    };
+  }, []);
+
+  /** The head sets a cap on what a person may spend on a category. */
+  const setLimit = async (uid: string, categoryId: string, capMinor: number) => {
+    if (!householdId) throw new Error('No household selected');
+    const owner = requireOwner();
+    const cap = Math.max(0, Math.trunc(capMinor));
+    await setDoc(
+      doc(db, 'households', householdId, 'limits', `${uid}_${categoryId}`),
+      { uid, categoryId, capMinor: cap, setBy: owner.uid, setAt: Date.now() },
+      { merge: true },
+    );
+    void logActivity('LIMIT_CHANGED', `Set a ${formatMinor(cap)} limit for a category`);
+  };
 
   const requireUser = () => {
     const user = auth.currentUser;
@@ -770,6 +812,9 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
         topups,
         wallets,
         walletTxns,
+        limits,
+        offline,
+        setLimit,
         activity,
         loading,
         error,

@@ -10,11 +10,13 @@ import { HistoryScreen } from './screens/HistoryScreen';
 import { InsightsScreen } from './screens/InsightsScreen';
 import { MembersScreen } from './screens/MembersScreen';
 import { WalletsScreen } from './screens/WalletsScreen';
+import { LimitsScreen } from './screens/LimitsScreen';
 import { CategoriesScreen } from './screens/CategoriesScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { Spinner } from './components/ui/Field';
 import { useAuth } from './contexts/AuthContext';
+import { useHousehold } from './contexts/HouseholdContext';
 import { useSettings } from './contexts/SettingsContext';
 import type { Screen } from './screens/navigation';
 
@@ -29,6 +31,7 @@ function Splash({ label }: { label: string }) {
 
 function Shell() {
   const { themeMode } = useSettings();
+  const { offline } = useHousehold();
   const [screen, setScreen] = useState<Screen>('home');
   const [query, setQuery] = useState('');
   const [showCategories, setShowCategories] = useState(false);
@@ -42,6 +45,12 @@ function Shell() {
         themeMode === 'dark' ? 'dark' : ''
       }`}
     >
+      {offline && (
+        <div className="border-b border-line bg-amber-500/15 px-4 py-2 text-center text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+          Offline — anything you add is saved on this device and syncs when you are back.
+        </div>
+      )}
+
       <AppHeader
         screen={screen}
         onNavigate={setScreen}
@@ -61,6 +70,7 @@ function Shell() {
                 {screen === 'insights' && <InsightsScreen />}
                 {screen === 'members' && <MembersScreen />}
                 {screen === 'wallets' && <WalletsScreen />}
+                {screen === 'limits' && <LimitsScreen />}
                 {screen === 'profile' && <ProfileScreen />}
                 {screen === 'settings' && (
                   <>
@@ -85,7 +95,7 @@ function Shell() {
             )}
           </div>
 
-          {(withSidebar || screen === 'wallets') && !showCategories && (
+          {(withSidebar || screen === 'wallets' || screen === 'limits') && !showCategories && (
             <InsightsSidebar onNavigate={(next) => setScreen(next)} />
           )}
         </div>

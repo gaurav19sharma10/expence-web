@@ -5,6 +5,7 @@ import { EmptyLedgerIllustration } from '../vector/Illustrations';
 import { Spinner } from '../ui/Field';
 import { useHousehold } from '../../contexts/HouseholdContext';
 import { formatMoney } from '../../utils/format';
+import { matches, parseQuery } from '../../lib/search';
 
 export interface FeedFilter {
   query: string;
@@ -21,20 +22,39 @@ export interface FeedFilter {
 export function ExpenseFeed({ filter }: { filter: FeedFilter }) {
   const { expenses, categories, members, householdId, loading } = useHousehold();
 
+  // Parsed once for the whole list rather than per row: the query understands
+  // dates and amounts as well as words, and re-parsing it for five hundred
+  // expenses is five hundred chances to disagree with itself.
+  const query = useMemo(() => parseQuery(filter.query), [filter.query]);
+
   const rows = useMemo(() => {
-    const q = filter.query.trim().toLowerCase();
+    if (!filter.query.trim()) {
+      return expenses
+        .filter((e: any) => !e.deletedAt)
+        .filter((e: any) => !filter.onlyPaidBy || e.paidBy === filter.onlyPaidBy);
+    }
     return expenses
       .filter((e: any) => !e.deletedAt)
       .filter((e: any) => !filter.onlyPaidBy || e.paidBy === filter.onlyPaidBy)
       .filter((e: any) => {
-        if (!q) return true;
         const cat = categories.find((c: any) => c.id === e.categoryId);
         const payer = members.find((m: any) => m.uid === e.paidBy);
-        return [e.description, e.merchant, e.notes, cat?.name, payer?.displayName]
-          .filter(Boolean)
-          .some((field: string) => field.toLowerCase().includes(q));
+        return matches(
+          {
+            id: e.id,
+            description: e.description,
+            notes: e.notes,
+            merchant: e.merchant,
+            categoryName: cat?.name,
+            payerName: payer?.displayName,
+            baseAmountMinor: e.baseAmountMinor,
+            currency: e.currency,
+            dateEpochDay: e.dateEpochDay,
+          },
+          query,
+        ).matched;
       });
-  }, [expenses, categories, members, filter.query, filter.onlyPaidBy]);
+  }, [expenses, categories, members, filter.query, filter.onlyPaidBy, query]);
 
   const pinned = rows.filter((e: any) => e.isPinned);
   const rest = rows.filter((e: any) => !e.isPinned);

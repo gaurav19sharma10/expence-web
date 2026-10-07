@@ -17,9 +17,9 @@ export function LoginScreen() {
     setLoading(true);
     try {
       if (isSignUp) {
-        await window.__FB?.auth?.createUserWithEmailAndPassword(email, password);
+        await signUp(email, password);
       } else {
-        await window.__FB?.auth?.signInWithEmailAndPassword(email, password);
+        await signIn(email, password);
       }
     } catch (error: any) {
       setError(error.message);

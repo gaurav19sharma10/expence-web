@@ -1,106 +1,132 @@
 import React, { useState } from 'react';
-import { useAuth } from './contexts/AuthContext';
-import { useHousehold } from './contexts/HouseholdContext';
-import { useSettings } from './contexts/SettingsContext';
+import { RvsLogo } from './components/vector/RvsLogo';
+import { AppHeader, BottomNav } from './components/layout/AppHeader';
+import { InsightsSidebar } from './components/layout/InsightsSidebar';
 import { LoginScreen } from './screens/LoginScreen';
-import { HomeScreen } from './screens/HomeScreen';
-import { HistoryScreen } from './screens/HistoryScreen';
-import { AddExpenseScreen } from './screens/AddExpenseScreen';
-import { InsightsScreen } from './screens/InsightsScreen';
-import { FamilyScreen } from './screens/FamilyScreen';
-import { SettingsScreen } from './screens/SettingsScreen';
 import { ProfileSetupScreen } from './screens/ProfileSetupScreen';
 import { OnboardingScreen } from './screens/OnboardingScreen';
-import { ProfileScreen } from './screens/ProfileScreen';
-import { TopUpScreen } from './screens/TopUpScreen';
-import { CategoriesScreen } from './screens/CategoriesScreen';
+import { HomeScreen } from './screens/HomeScreen';
+import { HistoryScreen } from './screens/HistoryScreen';
+import { InsightsScreen } from './screens/InsightsScreen';
 import { MembersScreen } from './screens/MembersScreen';
+import { CategoriesScreen } from './screens/CategoriesScreen';
+import { ProfileScreen } from './screens/ProfileScreen';
+import { SettingsScreen } from './screens/SettingsScreen';
+import { Spinner } from './components/ui/Field';
+import { useAuth } from './contexts/AuthContext';
+import { useSettings } from './contexts/SettingsContext';
+import type { Screen } from './screens/navigation';
 
-type Screen =
-  | 'home'
-  | 'history'
-  | 'add'
-  | 'insights'
-  | 'family'
-  | 'settings'
-  | 'profile'
-  | 'topup'
-  | 'categories'
-  | 'members';
-
-function App() {
-  const { user, profile, loading: authLoading, profileLoading } = useAuth();
-  const { householdId } = useHousehold();
-  const { themeMode } = useSettings();
-  const [currentScreen, setCurrentScreen] = useState<Screen>('home');
-
-  if (authLoading) return <div className="loading-screen">Loading...</div>;
-
-  if (!user) {
-    return <LoginScreen />;
-  }
-
-  // Signing in is not the same as having a profile: the document still has to
-  // be read before the screen can tell a finished profile from a new account.
-  if (profileLoading) return <div className="loading-screen">Loading...</div>;
-
-  if (!profile?.profileCompleted) {
-    return <ProfileSetupScreen onComplete={() => setCurrentScreen('home')} />;
-  }
-
-  // A finished profile with no family behind it is the state every new account
-  // is in, and the only screen that can resolve it is onboarding.
-  if (!householdId) {
-    return <OnboardingScreen onComplete={() => setCurrentScreen('home')} />;
-  }
-
+function Splash({ label }: { label: string }) {
   return (
-    <div className={`app ${themeMode === 'dark' ? 'dark' : ''}`}>
-      <div className="app-header">
-        <h1>Expence</h1>
-        <div className="header-actions">
-          <button className="icon-btn" onClick={() => setCurrentScreen('settings')}>
-            ⚙️
-          </button>
-        </div>
-      </div>
-
-      <main className="main-content">
-        {currentScreen === 'home' && <HomeScreen />}
-        {currentScreen === 'history' && <HistoryScreen />}
-        {currentScreen === 'add' && <AddExpenseScreen onDone={() => setCurrentScreen('home')} />}
-        {currentScreen === 'insights' && <InsightsScreen />}
-        {currentScreen === 'family' && <FamilyScreen />}
-        {currentScreen === 'settings' && <SettingsScreen />}
-        {currentScreen === 'profile' && <ProfileScreen />}
-        {currentScreen === 'topup' && <TopUpScreen />}
-        {currentScreen === 'categories' && <CategoriesScreen />}
-        {currentScreen === 'members' && <MembersScreen />}
-      </main>
-
-      <nav className="bottom-nav">
-        <button className={`nav-item ${currentScreen === 'home' ? 'active' : ''}`} onClick={() => setCurrentScreen('home')}>
-          <span>🏠</span>
-          <span>Home</span>
-        </button>
-        <button className={`nav-item ${currentScreen === 'history' ? 'active' : ''}`} onClick={() => setCurrentScreen('history')}>
-          <span>📋</span>
-          <span>History</span>
-        </button>
-        <button className={`nav-item add-btn ${currentScreen === 'add' ? 'active' : ''}`} onClick={() => setCurrentScreen('add')}>
-          <span>＋</span>
-        </button>
-        <button className={`nav-item ${currentScreen === 'insights' ? 'active' : ''}`} onClick={() => setCurrentScreen('insights')}>
-          <span>📊</span>
-          <span>Insights</span>
-        </button>
-        <button className={`nav-item ${currentScreen === 'family' ? 'active' : ''}`} onClick={() => setCurrentScreen('family')}>
-          <span>👥</span>
-          <span>Family</span>
-        </button>
-      </nav>
+    <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-canvas">
+      <RvsLogo size={64} className="animate-pulse" />
+      <p className="text-xs font-bold uppercase tracking-widest text-faint">{label}</p>
     </div>
   );
+}
+
+function Shell() {
+  const { themeMode } = useSettings();
+  const [screen, setScreen] = useState<Screen>('home');
+  const [query, setQuery] = useState('');
+  const [showCategories, setShowCategories] = useState(false);
+
+  // The sidebar only belongs beside the ledger; the other screens are full width.
+  const withSidebar = screen === 'home' || screen === 'history' || screen === 'insights';
+
+  return (
+    <div
+      className={`flex min-h-screen flex-col bg-canvas text-body selection:bg-brand/20 ${
+        themeMode === 'dark' ? 'dark' : ''
+      }`}
+    >
+      <AppHeader
+        screen={screen}
+        onNavigate={setScreen}
+        query={query}
+        onQueryChange={setQuery}
+      />
+
+      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-5 pb-28 md:px-8 md:pb-8">
+        <div className="flex flex-col items-start gap-6 lg:flex-row">
+          <div className="min-w-0 w-full flex-1">
+            {showCategories ? (
+              <CategoriesScreen />
+            ) : (
+              <>
+                {screen === 'home' && <HomeScreen query={query} />}
+                {screen === 'history' && <HistoryScreen query={query} />}
+                {screen === 'insights' && <InsightsScreen />}
+                {screen === 'members' && <MembersScreen />}
+                {screen === 'profile' && <ProfileScreen />}
+                {screen === 'settings' && (
+                  <>
+                    <SettingsScreen
+                      onNavigate={(next) => {
+                        setScreen(next);
+                        setShowCategories(false);
+                      }}
+                    />
+                    <div className="mt-4">
+                      <button
+                        type="button"
+                        onClick={() => setShowCategories((v) => !v)}
+                        className="w-full rounded-2xl border border-line bg-surface px-4 py-3 text-xs font-bold text-brand shadow-sm transition-colors hover:bg-surface-sunken"
+                      >
+                        {showCategories ? 'Hide categories' : 'Manage categories'}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+          </div>
+
+          {withSidebar && !showCategories && (
+            <InsightsSidebar onNavigate={(next) => setScreen(next)} />
+          )}
+        </div>
+      </main>
+
+      <BottomNav screen={screen} onNavigate={setScreen} onAdd={() => setScreen('home')} />
+    </div>
+  );
+}
+
+/**
+ * The gate.
+ *
+ * Four states, in order: authenticating, signed out, profile incomplete, no
+ * household. The last two are separate screens rather than one, because a new
+ * account has to do both in turn and collapsing them means one of them never
+ * appears.
+ *
+ * `profileLoading` is checked before the profile itself. Without it a returning
+ * user briefly renders the "complete your profile" form while the document is
+ * still in flight, and starts editing a profile that was complete all along.
+ */
+function App() {
+  const { user, profile, loading, profileLoading } = useAuth();
+
+  if (loading) return <Splash label="Connecting…" />;
+  if (!user) return <LoginScreen />;
+  if (profileLoading) return <Splash label="Loading your profile…" />;
+  if (!profile?.profileCompleted) return <ProfileSetupScreen />;
+
+  return <OnboardingGate />;
+}
+
+/**
+ * Onboarding is a *household* question, not a profile one, so it is resolved
+ * inside the shell: a signed-in user with no family is sent to onboarding, and
+ * anyone else goes straight through to the ledger.
+ */
+function OnboardingGate() {
+  const { profile } = useAuth();
+  const hasHousehold = (profile?.householdIds?.length || 0) > 0;
+  if (!hasHousehold) return <OnboardingScreen />;
+  return <Shell />;
 }
 
 export default App;

@@ -1,0 +1,114 @@
+@import 'tailwindcss';
+
+/**
+ * The design language is ported from the reference app: a Google Keep–inspired
+ * ledger — chalk canvas, white note cards in pastel colours, one blue accent,
+ * generous rounded corners, and almost no chrome.
+ *
+ * Surfaces are declared as *tokens* rather than baked into each class so that
+ * dark mode is a variable swap on `.dark` instead of a `dark:` variant on every
+ * element. Tailwind emits `var(--color-*)` for these, so overriding the
+ * variable restyles everything that references it.
+ *
+ * The raw palette from the reference is preserved below as `--keep-*`, and is
+ * what `NOTE_COLORS` in `src/lib/notes.ts` uses for note backgrounds. Those
+ * are deliberately not themed: a note's colour is chosen by the person who
+ * wrote it, and it has to survive a theme switch unchanged.
+ */
+@theme {
+  /* Brand */
+  --color-brand: #0057ff;
+  --color-brand-hover: #0046d1;
+  --color-brand-light: #ebf2ff;
+
+  /* Chrome */
+  --color-canvas: #f8f7f4;
+  --color-surface: #ffffff;
+  --color-surface-sunken: #f0eee9;
+  --color-line: #e6e4de;
+  --color-body: #1f2937;
+  --color-muted: #6b7280;
+  --color-faint: #9ca3af;
+
+  /* Feedback */
+  --color-positive: #059669;
+  --color-negative: #dc2626;
+
+  /* The reference's note palette, kept verbatim. */
+  --color-keep-peach: #ffe0b2;
+  --color-keep-mint: #c8e6c9;
+  --color-keep-sky: #bbdefb;
+  --color-keep-lemon: #fff9c4;
+  --color-keep-lavender: #e1bee7;
+  --color-keep-coral: #ffcdd2;
+  --color-keep-sage: #dcedc8;
+}
+
+/**
+ * Dark mode.
+ *
+ * The reference has no dark theme, but this app exposes a theme control (the
+ * Android client has one too), so it cannot simply be ignored. Only the
+ * chrome is re-tinted: note colours and the brand blue stay put, because a
+ * note's colour is user-chosen data rather than part of the interface.
+ */
+:root.dark {
+  --color-canvas: #14161a;
+  --color-surface: #1d2025;
+  --color-surface-sunken: #171a1e;
+  --color-line: #2f333a;
+  --color-body: #e6e4de;
+  --color-muted: #9aa0a6;
+  --color-faint: #6f757c;
+  --color-brand: #4d8bff;
+  --color-brand-hover: #6ba0ff;
+  --color-brand-light: #16243f;
+}
+
+html {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-color: var(--color-canvas);
+  color: var(--color-body);
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Matches the reference's minimal scrollbar. */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgb(0 0 0 / 0.15);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(0 0 0 / 0.25);
+}
+
+/**
+ * The error boundary keeps a crash readable instead of leaving a blank page.
+ * React unmounts the whole tree when a render throws, so without visible output
+ * there is nothing on screen to explain what happened.
+ */
+.error-detail {
+  background: var(--color-brand-light);
+  border: 1px solid var(--color-line);
+  border-radius: 12px;
+  padding: 12px;
+  font-size: 13px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-align: left;
+}

@@ -1,14 +1,15 @@
 {
-  "name": "Expence",
-  "short_name": "Expence",
-  "description": "Shared family expense tracker",
+  "name": "RVS Expences",
+  "short_name": "Expences",
+  "description": "A shared family expense ledger that syncs in realtime across web and Android.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f7f6f3",
-  "theme_color": "#3d6b4f",
+  "orientation": "portrait",
+  "background_color": "#F8F7F4",
+  "theme_color": "#0057FF",
   "icons": [
     {
-      "src": "/vite.svg",
+      "src": "/favicon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"

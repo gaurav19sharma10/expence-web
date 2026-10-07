@@ -1,80 +1,149 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
+import { VectorIcon } from '../components/vector/VectorIcons';
+import { EmptyInsightsIllustration } from '../components/vector/Illustrations';
+import { Button } from '../components/ui/Field';
+import { useAuth } from '../contexts/AuthContext';
 import { useHousehold } from '../contexts/HouseholdContext';
-import { formatMoney, formatDateShort, formatRelativeTime } from '../utils/format';
-import { EmptyState } from '../components/Common';
+import { formatMoney } from '../utils/format';
 
-export function HistoryScreen() {
-  const { expenses, settlements, members, household } = useHousehold();
-  const [filter, setFilter] = useState<'all' | 'expenses' | 'settlements'>('all');
-  const [search, setSearch] = useState('');
+/**
+ * History, grouped by day.
+ *
+ * A note feed is the wrong shape for history: a ledger you are reading back
+ * through wants rows, not cards, and the day header carries the day's total.
+ */
+export function HistoryScreen({ query }: { query: string }) {
+  const { expenses, categories, members, household } = useHousehold();
+  const [payer, setPayer] = useState<string>('all');
+  const currency = household?.baseCurrency || 'INR';
 
-  const filteredExpenses = expenses
-    .filter(e => !e.deletedAt)
-    .filter(e => {
-      const matchesSearch = e.description?.toLowerCase().includes(search.toLowerCase()) ||
-        e.merchant?.toLowerCase().includes(search.toLowerCase());
-      const matchesFilter = filter === 'all' || filter === 'expenses';
-      return matchesSearch && matchesFilter;
-    })
-    .sort((a, b) => (b.dateEpochDay || 0) - (a.dateEpochDay || 0));
+  const days = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const rows = expenses
+      .filter((e: any) => !e.deletedAt)
+      .filter((e: any) => (payer === 'all' ? true : e.paidBy === payer))
+      .filter((e: any) => {
+        if (!q) return true;
+        const cat = categories.find((c: any) => c.id === e.categoryId);
+        return [e.description, e.merchant, e.notes, cat?.name]
+          .filter(Boolean)
+          .some((v: string) => v.toLowerCase().includes(q));
+      });
 
-  const filteredSettlements = settlements
-    .filter(s => !s.deletedAt)
-    .filter(s => {
-      const matchesSearch = s.note?.toLowerCase().includes(search.toLowerCase());
-      const matchesFilter = filter === 'all' || filter === 'settlements';
-      return matchesSearch && matchesFilter;
-    })
-    .sort((a, b) => (b.dateEpochDay || 0) - (a.dateEpochDay || 0));
+    const grouped = new Map<number, any[]>();
+    rows.forEach((e: any) => {
+      const day = e.dateEpochDay || 0;
+      grouped.set(day, [...(grouped.get(day) || []), e]);
+    });
+
+    return [...grouped.entries()]
+      .sort((a, b) => b[0] - a[0])
+      .map(([day, list]) => ({
+        day,
+        list,
+        total: list.reduce((sum, e) => sum + (e.baseAmountMinor || 0), 0),
+      }));
+  }, [expenses, categories, payer, query]);
+
+  if (days.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center px-4 py-16 text-center">
+        <EmptyInsightsIllustration size={170} />
+        <h3 className="mt-4 text-base font-bold text-body">Nothing here yet</h3>
+        <p className="mt-1 max-w-sm text-xs text-muted">
+          Expenses show up here the moment anyone in the family logs one.
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <div className="history-screen">
-      <h2>History</h2>
-      
-      <input
-        type="text"
-        placeholder="Search expenses..."
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        className="search-input"
-      />
-
-      <div className="filter-tabs">
-        <button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')}>All</button>
-        <button className={filter === 'expenses' ? 'active' : ''} onClick={() => setFilter('expenses')}>Expenses</button>
-        <button className={filter === 'settlements' ? 'active' : ''} onClick={() => setFilter('settlements')}>Settlements</button>
+    <div className="space-y-6">
+      <div className="flex flex-wrap gap-1.5">
+        <FilterPill active={payer === 'all'} onClick={() => setPayer('all')}>
+          Everyone
+        </FilterPill>
+        {members.map((m: any) => (
+          <FilterPill key={m.uid} active={payer === m.uid} onClick={() => setPayer(m.uid)}>
+            {m.displayName || m.email}
+          </FilterPill>
+        ))}
       </div>
 
-      <div className="history-list">
-        {expenses.length === 0 && settlements.length === 0 ? (
-          <div className="empty-state">
-            <p>No history yet</p>
+      {days.map(({ day, list, total }) => (
+        <section key={day}>
+          <div className="mb-2 flex items-baseline justify-between px-1">
+            <h2 className="text-[11px] font-bold uppercase tracking-wider text-muted">
+              {new Date(day * 86_400_000).toLocaleDateString('en-GB', {
+                weekday: 'short',
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric',
+              })}
+            </h2>
+            <span className="text-xs font-bold text-body">{formatMoney(total, currency)}</span>
           </div>
-        ) : (
-          <>
-            {expenses.length > 0 && (
-              <div>
-                <h3>Expenses</h3>
-                <ul>
-                  {expenses
-                    .filter(e => !e.deletedAt)
-                    .sort((a, b) => (b.dateEpochDay || 0) - (a.dateEpochDay || 0))
-                    .slice(0, 20)
-                    .map(expense => (
-                      <li key={expense.id} className="history-item">
-                        <div className="expense-info">
-                          <span className="expense-title">{expense.description || expense.merchant || 'Expense'}</span>
-<span className="expense-meta">{formatDateShort(expense.dateEpochDay)} • {formatMoney(expense.baseAmountMinor)}</span>
-                          </div>
-                        <span className="expense-amount">{formatMoney(expense.baseAmountMinor)}</span>
-                      </li>
-                    ))}
-                </ul>
-              </div>
-            )}
-          </>
-        )}
-      </div>
+
+          <div className="overflow-hidden rounded-2xl border border-line bg-surface">
+            {list.map((e: any, i: number) => {
+              const cat = categories.find((c: any) => c.id === e.categoryId);
+              const who = members.find((m: any) => m.uid === e.paidBy);
+              return (
+                <div
+                  key={e.id}
+                  className={`flex items-center gap-3 px-4 py-3 ${
+                    i > 0 ? 'border-t border-line' : ''
+                  }`}
+                >
+                  <span
+                    className="flex size-8 shrink-0 items-center justify-center rounded-full"
+                    style={{ background: `${cat?.color || '#9CA3AF'}1f`, color: cat?.color }}
+                  >
+                    <VectorIcon name={cat?.icon || cat?.name || 'dots'} size={15} />
+                  </span>
+
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-body">{e.description}</p>
+                    <p className="truncate text-[11px] text-muted">
+                      {who?.displayName || 'Someone'}
+                      {e.merchant ? ` · ${e.merchant}` : ''}
+                      {e.notes ? ` · ${e.notes}` : ''}
+                    </p>
+                  </div>
+
+                  <span className="shrink-0 text-sm font-bold text-body">
+                    {formatMoney(e.baseAmountMinor, e.currency || currency)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      ))}
     </div>
+  );
+}
+
+function FilterPill({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-full border px-3 py-1.5 text-[11px] font-bold transition-colors ${
+        active
+          ? 'border-brand/30 bg-brand-light text-brand'
+          : 'border-line text-muted hover:bg-surface-sunken hover:text-body'
+      }`}
+    >
+      {children}
+    </button>
   );
 }

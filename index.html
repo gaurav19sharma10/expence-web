@@ -2,10 +2,20 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Expence — Shared Family Expenses</title>
-    <meta name="theme-color" content="#3d6b4f" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>RVS Expences — Realtime Cloud Ledger</title>
+    <meta
+      name="description"
+      content="A shared family expense ledger that syncs in realtime across web and Android."
+    />
+    <!--
+      Two theme colours, because the app has a dark mode and a browser chrome
+      bar can only take one. `light-dark()` picks per the OS setting, which is
+      what the app's "system" theme follows anyway.
+    -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#F8F7F4" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#14161A" />
     <link rel="manifest" href="/manifest.json" />
   </head>
   <body>

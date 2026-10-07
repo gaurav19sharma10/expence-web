@@ -1,30 +1,35 @@
 import React, { useState } from 'react';
+import { RvsLogo } from '../components/vector/RvsLogo';
+import { Banner, Button, Field, SelectInput, TextInput } from '../components/ui/Field';
 import { useAuth } from '../contexts/AuthContext';
-import { useHousehold } from '../contexts/HouseholdContext';
 
-export function ProfileSetupScreen({ onComplete }: { onComplete: () => void }) {
+const COUNTRIES = [
+  { code: 'IN', dial: '+91', flag: '🇮🇳' },
+  { code: 'US', dial: '+1', flag: '🇺🇸' },
+  { code: 'GB', dial: '+44', flag: '🇬🇧' },
+  { code: 'AE', dial: '+971', flag: '🇦🇪' },
+  { code: 'SG', dial: '+65', flag: '🇸🇬' },
+];
+
+export function ProfileSetupScreen() {
   const { profile, saveProfile } = useAuth();
+
   const [name, setName] = useState(profile?.displayName || '');
-  const [dob, setDob] = useState('');
-  const [mobile, setMobile] = useState('');
-  const [country, setCountry] = useState('IN');
-  const [skip, setSkip] = useState(false);
+  const [dob, setDob] = useState(profile?.dateOfBirth || '');
+  const [country, setCountry] = useState(profile?.countryIso || 'IN');
+  const [mobile, setMobile] = useState(profile?.mobile || '');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
-  const countries = [
-    { code: 'IN', name: 'India' },
-    { code: 'US', name: 'United States' },
-    { code: 'GB', name: 'United Kingdom' },
-    { code: 'AE', name: 'UAE' },
-    { code: 'SG', name: 'Singapore' },
-  ];
+  const dial = COUNTRIES.find((c) => c.code === country)?.dial || '+91';
 
-  const handleSave = async (completed: boolean) => {
+  const save = async (completed: boolean) => {
     if (!name.trim()) {
-      setError('Name is required');
+      setError('A name is required — it is what your family sees on every expense.');
       return;
     }
+    setBusy(true);
+    setError(null);
     try {
       await saveProfile({
         displayName: name.trim(),
@@ -34,70 +39,72 @@ export function ProfileSetupScreen({ onComplete }: { onComplete: () => void }) {
         mobileCountryIso: mobile ? country : null,
         profileCompleted: completed,
       });
-      onComplete();
-    } catch (error: any) {
-      console.error('Failed to save profile:', error);
-      setError(error?.message || 'Could not save your profile. Please try again.');
+    } catch (err: any) {
+      setError(err?.message || 'Could not save your profile.');
+    } finally {
+      setBusy(false);
     }
   };
 
   return (
-    <div className="profile-setup-screen">
-      <div className="center-card">
-        <h2>{profile?.profileCompleted ? 'Edit Profile' : 'Complete Your Profile'}</h2>
-        <p className="subtitle">
-          {profile?.profileCompleted ? 'Update your information' : 'This helps personalize your experience'}
-        </p>
-
-        <div className="form-group">
-          <label>Name</label>
-          <input
-            type="text"
-            placeholder="Your name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            autoFocus
-          />
+    <div className="flex min-h-screen items-center justify-center bg-canvas p-4">
+      <div className="w-full max-w-md space-y-6 rounded-3xl border border-line bg-surface p-8 shadow-xl">
+        <div className="flex flex-col items-center gap-2 text-center">
+          <RvsLogo size={52} />
+          <h1 className="text-xl font-black tracking-tight text-body">
+            {profile?.profileCompleted ? 'Edit your profile' : 'Complete your profile'}
+          </h1>
+          <p className="text-xs font-medium text-muted">
+            This is what your family sees next to every expense you log.
+          </p>
         </div>
 
-        <div className="form-group">
-          <label>Date of Birth (optional)</label>
-          <input
-            type="date"
-            value={dob}
-            onChange={(e) => setDob(e.target.value)}
-          />
-        </div>
+        {error && <Banner tone="error">{error}</Banner>}
 
-        <div className="form-group">
-          <label>Mobile (optional)</label>
-          <div className="form-row">
-            <select value={country} onChange={(e) => setCountry(e.target.value)} style={{ width: '100px' }}>
-              <option value="IN">🇮🇳 +91</option>
-              <option value="US">🇺🇸 +1</option>
-              <option value="GB">🇬🇧 +44</option>
-              <option value="AE">🇦🇪 +971</option>
-              <option value="SG">🇸🇬 +65</option>
-            </select>
-            <input
-              type="tel"
-              placeholder="Mobile number"
-              value={mobile}
-              onChange={(e) => setMobile(e.target.value)}
-              inputMode="tel"
+        <div className="space-y-4">
+          <Field label="Name" icon="users">
+            <TextInput
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Your name"
+              autoFocus
             />
+          </Field>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Country">
+              <SelectInput value={country} onChange={(e) => setCountry(e.target.value)}>
+                {COUNTRIES.map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {c.flag} {c.code}
+                  </option>
+                ))}
+              </SelectInput>
+            </Field>
+
+            <Field label="Mobile (optional)" icon="phone">
+              <TextInput
+                type="tel"
+                inputMode="tel"
+                value={mobile}
+                onChange={(e) => setMobile(e.target.value)}
+                placeholder={dial}
+              />
+            </Field>
           </div>
+
+          <Field label="Date of birth (optional)" icon="calendar" hint="Used for nothing but your own reference.">
+            <TextInput type="date" value={dob} onChange={(e) => setDob(e.target.value)} />
+          </Field>
         </div>
 
-        {error && <div className="error-message">{error}</div>}
-
-        <div className="form-actions">
-          <button className="btn-secondary" onClick={() => setSkip(true)}>
-            {profile?.profileCompleted ? 'Cancel' : 'I\'ll do this later'}
-          </button>
-          <button className="btn-primary" onClick={() => handleSave(!skip)} disabled={!name.trim()}>
-            {skip ? 'Skip' : 'Save & Continue'}
-          </button>
+        <div className="flex gap-2">
+          <Button variant="ghost" className="flex-1" busy={busy} onClick={() => void save(false)}>
+            Skip for now
+          </Button>
+          <Button className="flex-1" busy={busy} onClick={() => void save(true)}>
+            Save &amp; continue
+          </Button>
         </div>
       </div>
     </div>

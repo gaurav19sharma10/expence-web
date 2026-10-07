@@ -1,90 +1,84 @@
-import React, { useState, useEffect } from 'react';
-import { useHousehold } from '../contexts/HouseholdContext';
+import React, { useMemo, useState } from 'react';
+import { QuickAdd } from '../components/feed/QuickAdd';
+import { ExpenseFeed } from '../components/feed/ExpenseFeed';
 import { useAuth } from '../contexts/AuthContext';
-import { useSettings } from '../contexts/SettingsContext';
-import { formatMoney, formatDateShort } from '../utils/format';
-import { formatRelativeTime } from '../utils/format';
-import { EmptyState, ExpenseCard, SettlementCard } from '../components/Common';
+import { useHousehold } from '../contexts/HouseholdContext';
+import { formatMoney } from '../utils/format';
 
-export function HomeScreen() {
-  const { household, members, expenses, topups } = useHousehold();
-  const { profile } = useAuth();
-  const { themeMode } = useSettings();
-  const [greeting, setGreeting] = useState('');
+/**
+ * The ledger: this month's headline figures, then every expense as a note.
+ *
+ * The summary strip is the only place totals appear above the fold; the sidebar
+ * carries the live detail.
+ */
+export function HomeScreen({ query }: { query: string }) {
+  const { user } = useAuth();
+  const { household, expenses, members } = useHousehold();
+  const [scope, setScope] = useState<'all' | 'mine'>('all');
+  const currency = household?.baseCurrency || 'INR';
 
-  useEffect(() => {
-    const hour = new Date().getHours();
-    const greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-    setGreeting(greet);
-  }, []);
-
-  const totalSpent = expenses
-    .filter(e => !e.deletedAt)
-    .reduce((sum, e) => sum + (e.baseAmountMinor || 0), 0);
-
-  const potTotal = topups.reduce((sum, t) => sum + (t.baseAmountMinor || 0), 0);
+  const stats = useMemo(() => {
+    const now = new Date();
+    const monthStart = Math.floor(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) / 86_400_000,
+    );
+    const live = expenses.filter((e: any) => !e.deletedAt);
+    const month = live.filter((e: any) => (e.dateEpochDay || 0) >= monthStart);
+    return {
+      month: month.reduce((sum: number, e: any) => sum + (e.baseAmountMinor || 0), 0),
+      all: live.reduce((sum: number, e: any) => sum + (e.baseAmountMinor || 0), 0),
+      count: live.length,
+    };
+  }, [expenses]);
 
   return (
-    <div className="home-screen">
-      <section className="hero">
-        <h1>{greeting},</h1>
-        <h2>{profile?.displayName || 'You'}</h2>
-        <p className="subtitle">Let's talk about today's expense.</p>
-      </section>
-
-      <div className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-label">This Month</div>
-          <div className="stat-value">{formatMoney(
-            expenses.filter(e => !e.deletedAt && isThisMonth(e.dateEpochDay))
-              .reduce((sum, e) => sum + (e.baseAmountMinor || 0), 0)
-          )}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">Family Pot</div>
-          <div className="stat-value">{formatMoney(
-            topups.reduce((sum, t) => sum + (t.baseAmountMinor || 0), 0)
-          )}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">Members</div>
-          <div className="stat-value">{members.length}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">Invite Code</div>
-          <div className="invite-code">{household?.inviteCode || '—'}</div>
-        </div>
+    <div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Stat label="This month" value={formatMoney(stats.month, currency)} accent />
+        <Stat label="All time" value={formatMoney(stats.all, currency)} />
+        <Stat label="Expenses" value={String(stats.count)} />
+        <Stat label="Members" value={String(members.length)} />
       </div>
 
-      <h3>Recent Expenses</h3>
-      <div className="expense-list">
-        {expenses
-          .filter(e => !e.deletedAt)
-          .slice(0, 5)
-          .map((expense) => (
-            <ExpenseCard
-              key={expense.id}
-              expense={expense}
-              members={[]}
-              currency={household?.baseCurrency || 'INR'}
-              onClick={() => {}}
-              onDelete={() => {}}
-              onEdit={() => {}}
-            />
-          ))}
-        {expenses.filter(e => !e.deletedAt).length === 0 && (
-          <div className="empty-state">
-            <p>No expenses yet. Add your first expense!</p>
+      <QuickAdd />
+
+      {members.length > 1 && (
+        <div className="mx-auto mb-1 flex w-full max-w-3xl justify-end px-3">
+          <div className="flex items-center gap-1 rounded-xl bg-surface-sunken p-1">
+            {(['all', 'mine'] as const).map((key) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setScope(key)}
+                className={`rounded-lg px-3 py-1 text-[11px] font-bold transition-colors ${
+                  scope === key ? 'bg-surface text-brand shadow-xs' : 'text-muted'
+                }`}
+              >
+                {key === 'all' ? 'Everyone' : 'My expenses'}
+              </button>
+            ))}
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      <ExpenseFeed filter={{ query, onlyPaidBy: scope === 'mine' ? (user?.uid ?? null) : null }} />
     </div>
   );
 }
 
-function isThisMonth(epochDay: number): boolean {
-  const d = new Date(epochDay * 86400000);
-  const now = new Date();
-  return d.getUTCFullYear() === new Date().getUTCFullYear() && 
-         d.getUTCMonth() === new Date().getUTCMonth();
+function Stat({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+}) {
+  return (
+    <div className="rounded-2xl border border-line bg-surface px-4 py-3 shadow-sm">
+      <p className="text-[10px] font-bold uppercase tracking-wider text-faint">{label}</p>
+      <p className={`mt-0.5 text-base font-bold ${accent ? 'text-brand' : 'text-body'}`}>{value}</p>
+    </div>
+  );
 }

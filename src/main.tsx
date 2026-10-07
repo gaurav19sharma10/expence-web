@@ -5,7 +5,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { HouseholdProvider } from './contexts/HouseholdContext';
 import { SettingsProvider } from './contexts/SettingsContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import './styles.css';
+import './index.css';
 
 /**
  * Errors that happen outside React -- a rejected promise, a Firebase listener

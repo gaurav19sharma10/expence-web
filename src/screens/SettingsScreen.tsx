@@ -1,137 +1,122 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
+import { VectorIcon } from '../components/vector/VectorIcons';
 import { useAuth } from '../contexts/AuthContext';
 import { useHousehold } from '../contexts/HouseholdContext';
 import { useSettings } from '../contexts/SettingsContext';
-import { formatMoney } from '../utils/format';
 
-export function SettingsScreen() {
-  const { user: currentUser, signOut, profile } = useAuth();
-  const { household, members } = useHousehold();
-  const { themeMode, darkIntensity, setThemeMode, setDarkIntensity, appLockEnabled, toggleAppLock, verifyPin } = useSettings();
-  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
-  const [leavePin, setLeavePin] = useState('');
-  const [leaveError, setLeaveError] = useState('');
-
-  const handleLeave = async () => {
-    if (!verifyPin(leavePin)) {
-      setLeaveError('Incorrect PIN');
-      return;
-    }
-    // Leave household logic
-    window.history.back();
-    setShowLeaveConfirm(false);
-  };
+export function SettingsScreen({ onNavigate }: { onNavigate: (screen: 'profile') => void }) {
+  const { signOut } = useAuth();
+  const { household, members, expenses, topups } = useHousehold();
+  const { themeMode, setThemeMode, darkIntensity, setDarkIntensity } = useSettings();
 
   return (
-    <div className="settings-screen">
-      <h2>Settings</h2>
+    <div className="space-y-5">
+      <section className="overflow-hidden rounded-3xl border border-line bg-surface shadow-sm">
+        <Header>Appearance</Header>
 
-      <section className="section">
-        <h3>Account</h3>
-        <div className="card">
-          <div className="profile-row">
-            <div className="avatar-large" style={{ backgroundColor: '#3d6b4f' }}>
-              {(profile?.displayName || 'U')[0].toUpperCase()}
-            </div>
-            <div>
-              <strong>{profile?.displayName || 'User'}</strong>
-              <div className="muted small">{profile?.email}</div>
-            </div>
-          </div>
-          <button className="btn-secondary" onClick={() => window.history.pushState(null, '', '/profile')}>
-            Edit Profile
-          </button>
-        </div>
-      </section>
-
-      <section className="section">
-        <h3>Appearance</h3>
-        <div className="card">
-          <h4>Theme</h4>
-          <div className="segmented-control">
-            {['system', 'light', 'dark'].map(mode => (
+        <div className="px-5 py-4">
+          <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-faint">Theme</p>
+          <div className="flex items-center gap-1 rounded-2xl bg-surface-sunken p-1">
+            {(['light', 'dark', 'system'] as const).map((mode) => (
               <button
                 key={mode}
-                className={`segment ${themeMode === mode ? 'active' : ''}`}
-                onClick={() => setThemeMode(mode as any)}
+                type="button"
+                onClick={() => setThemeMode(mode)}
+                className={`flex-1 rounded-xl py-2 text-xs font-bold capitalize transition-all ${
+                  themeMode === mode ? 'bg-surface text-brand shadow-xs' : 'text-muted'
+                }`}
               >
-                {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                {mode}
               </button>
             ))}
           </div>
+        </div>
 
-          <div className="slider-row">
-            <label>Dark Intensity</label>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.1"
-              value={darkIntensity}
-              onChange={(e) => setDarkIntensity(parseFloat(e.target.value))}
-            />
-            <span>{Math.round(darkIntensity * 100)}%</span>
+        <div className="border-t border-line px-5 py-4">
+          <div className="mb-2 flex items-baseline justify-between">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-faint">
+              Dark strength
+            </p>
+            <span className="text-[11px] font-bold text-brand">{Math.round(darkIntensity * 100)}%</span>
           </div>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={darkIntensity}
+            onChange={(e) => setDarkIntensity(Number(e.target.value))}
+            aria-label="Dark strength"
+            className="w-full accent-[var(--color-brand)]"
+          />
         </div>
       </section>
 
-      <section className="section">
-        <h3>App Lock</h3>
-        <div className="card">
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={appLockEnabled}
-              onChange={(e) => {
-              const on = e.target.checked;
-              // Enabling needs a PIN to lock against, which is why this asks
-              // rather than just flipping the flag.
-              const pin = on ? window.prompt('Choose a 4-digit PIN') : undefined;
-              if (on && !pin) return;
-              toggleAppLock(on, pin ?? undefined);
-            }}
-            />
-            <span>Require PIN to open app</span>
-          </label>
-        </div>
+      <section className="overflow-hidden rounded-3xl border border-line bg-surface shadow-sm">
+        <Header>Your account</Header>
+        <Row
+          icon="users"
+          label="Profile"
+          onClick={() => onNavigate('profile')}
+        />
+        <Row icon="home" label="Household" value={household?.name || '—'} />
+        <Row icon="users" label="Members" value={String(members.length)} />
+        <Row icon="receipt" label="Expenses" value={String(expenses.filter((e: any) => !e.deletedAt).length)} />
+        <Row icon="wallet" label="Pot contributions" value={String(topups.length)} last />
       </section>
 
-      <section className="section">
-        <h3>Family</h3>
-        <div className="card">
-          <div className="setting-row">
-            <span>Invite Code</span>
-            <div className="code">{household?.inviteCode}</div>
-          </div>
-          <div className="setting-row">
-            <span>Members</span>
-            <span className="muted">{members.length}</span>
-          </div>
-          <button className="btn-danger" onClick={() => setShowLeaveConfirm(true)}>
-            Leave Family
-          </button>
-        </div>
+      <section className="overflow-hidden rounded-3xl border border-line bg-surface shadow-sm">
+        <Header>Session</Header>
+        <button
+          type="button"
+          onClick={() => void signOut()}
+          className="flex w-full items-center gap-2.5 px-5 py-3.5 text-xs font-bold text-negative transition-colors hover:bg-negative/10"
+        >
+          <VectorIcon name="logout" size={15} color="var(--color-negative)" />
+          Sign out
+        </button>
       </section>
 
-      <section className="section">
-        <h3>Data</h3>
-        <div className="card">
-          <button className="btn-secondary" onClick={() => {
-            // Export CSV logic
-          }}>
-            Export CSV
-          </button>
-        </div>
-      </section>
-
-      <section className="section">
-        <h3>Account</h3>
-        <div className="card">
-          <button className="btn-danger" onClick={() => signOut()}>
-            Sign Out
-          </button>
-        </div>
-      </section>
+      <p className="px-1 text-center text-[11px] text-faint">
+        Expence · realtime Firestore ledger shared with your Android app.
+      </p>
     </div>
+  );
+}
+
+function Header({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="border-b border-line px-5 py-3.5">
+      <span className="text-[11px] font-bold uppercase tracking-wider text-faint">{children}</span>
+    </div>
+  );
+}
+
+function Row({
+  icon,
+  label,
+  value,
+  onClick,
+  last,
+}: {
+  icon: string;
+  label: string;
+  value?: string;
+  onClick?: () => void;
+  last?: boolean;
+}) {
+  const Tag = onClick ? 'button' : 'div';
+  return (
+    <Tag
+      {...(onClick ? { type: 'button' as const, onClick } : {})}
+      className={`flex w-full items-center gap-2.5 px-5 py-3 text-left transition-colors ${
+        last ? '' : 'border-b border-line'
+      } ${onClick ? 'hover:bg-surface-sunken' : ''}`}
+    >
+      <VectorIcon name={icon} size={15} className="shrink-0 text-faint" />
+      <span className="flex-1 text-sm font-semibold text-body">{label}</span>
+      {value && <span className="truncate text-xs font-medium text-muted">{value}</span>}
+      {onClick && <VectorIcon name="chevronRight" size={14} className="shrink-0 text-faint" />}
+    </Tag>
   );
 }

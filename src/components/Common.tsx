@@ -144,7 +144,7 @@ export function ConfirmDialog({
   onCancel,
   confirmText = 'Confirm',
   cancelText = 'Cancel',
-  variant: 'danger' | 'primary' = 'danger'
+  variant = 'danger'
 }: {
   isOpen: boolean;
   title: string;

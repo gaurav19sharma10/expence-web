@@ -208,6 +208,8 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     return user;
   };
 
+  const uid = () => requireUser().uid;
+
   /**
    * One batch, because a household whose owner document is missing is a
    * household nobody can administer.
@@ -314,6 +316,25 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     selectHousehold(hid);
   };
 
+  /**
+   * Takes the invite code off the caller's own member row.
+   *
+   * The code has to be present for the write that creates the row, because that
+   * is what the rules check against the invite document. Leaving it there
+   * afterwards is not harmless: it keeps a live code on a document every member
+   * can read, which is what the field exists to avoid. Best effort -- a member
+   * whose row cannot be cleared has lost nothing that matters.
+   */
+  const clearOwnInviteCode = async (hid: string) => {
+    try {
+      const member = await getDoc(doc(db, 'households', hid, 'members', uid()));
+      if (!member.exists() || member.data()?.inviteCode == null) return;
+      await updateDoc(doc(db, 'households', hid, 'members', uid()), { inviteCode: null });
+    } catch (err) {
+      console.error('Could not clear the invite code from the member row:', err);
+    }
+  };
+
   const setMemberAndJoin = async (hid: string, code: string | null) => {
     const user = requireUser();
     const batch = writeBatch(db);
@@ -334,6 +355,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     });
 
     await batch.commit();
+    await clearOwnInviteCode(hid);
   };
 
   const leaveHousehold = async () => {

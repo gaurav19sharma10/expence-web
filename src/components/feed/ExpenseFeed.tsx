@@ -2,7 +2,6 @@ import React, { useMemo } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { ExpenseCard } from './ExpenseCard';
 import { EmptyLedgerIllustration } from '../vector/Illustrations';
-import { Spinner } from '../ui/Field';
 import { useHousehold } from '../../contexts/HouseholdContext';
 import { formatMoney } from '../../utils/format';
 import { matches, parseQuery } from '../../lib/search';
@@ -61,11 +60,20 @@ export function ExpenseFeed({ filter }: { filter: FeedFilter }) {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 py-16">
-        <Spinner className="size-10 border-[3px] border-brand/30 border-t-brand" />
-        <p className="text-xs font-bold uppercase tracking-wider text-faint">
-          Syncing from Firestore…
-        </p>
+      /*
+       * Skeleton notes, not a spinner. A spinner reads as "waiting" -- a blank
+       * kind of time -- whereas the outline of where expenses will sit tells
+       * you the answer is already being prepared. The rows match the real
+       * card height so the content does not jump when it lands.
+       */
+      <div className="flex animate-pulse flex-col gap-3">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="rounded-2xl border border-line bg-surface p-4">
+            <div className="h-4 w-2/5 rounded bg-surface-sunken" />
+            <div className="mt-2 h-3 w-1/4 rounded bg-surface-sunken" />
+            <div className="mt-3 h-3 w-3/5 rounded bg-surface-sunken" />
+          </div>
+        ))}
       </div>
     );
   }

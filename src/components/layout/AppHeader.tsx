@@ -79,7 +79,7 @@ export function AppHeader({ screen, onNavigate, query, onQueryChange }: Props) {
           )}
         </div>
 
-        <div className="min-w-0 flex-1">
+        <div className="hidden min-w-0 flex-1 md:block">
           <div className="relative flex items-center rounded-2xl border border-line bg-surface shadow-sm transition-colors hover:bg-surface-sunken focus-within:border-brand/60 focus-within:bg-surface">
             <span className="pl-3.5 pr-2 text-faint">
               <VectorIcon name="search" size={18} />
@@ -257,26 +257,15 @@ export function AppHeader({ screen, onNavigate, query, onQueryChange }: Props) {
 export function BottomNav({
   screen,
   onNavigate,
-  onAdd,
 }: {
   screen: Screen;
   onNavigate: (screen: Screen) => void;
-  onAdd: () => void;
 }) {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 flex items-stretch justify-around border-t border-line bg-canvas/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden">
       {NAV.slice(0, 2).map((item) => (
         <NavButton key={item.key} item={item} active={screen === item.key} onClick={() => onNavigate(item.key)} />
       ))}
-
-      <button
-        type="button"
-        onClick={onAdd}
-        aria-label="Add expense"
-        className="-mt-5 flex size-12 shrink-0 items-center justify-center self-center rounded-full bg-brand text-white shadow-lg shadow-brand/30 active:scale-95"
-      >
-        <VectorIcon name="plus" size={22} strokeWidth={2.4} />
-      </button>
 
       {NAV.slice(2, 4).map((item) => (
         <NavButton key={item.key} item={item} active={screen === item.key} onClick={() => onNavigate(item.key)} />

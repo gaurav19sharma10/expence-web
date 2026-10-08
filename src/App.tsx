@@ -65,7 +65,7 @@ function Shell() {
               <CategoriesScreen />
             ) : (
               <>
-                {screen === 'home' && <HomeScreen query={query} />}
+                {screen === 'home' && <HomeScreen query={query} onQueryChange={setQuery} />}
                 {screen === 'history' && <HistoryScreen query={query} />}
                 {screen === 'insights' && <InsightsScreen />}
                 {screen === 'members' && <MembersScreen />}
@@ -101,7 +101,7 @@ function Shell() {
         </div>
       </main>
 
-      <BottomNav screen={screen} onNavigate={setScreen} onAdd={() => setScreen('home')} />
+      <BottomNav screen={screen} onNavigate={setScreen} />
     </div>
   );
 }

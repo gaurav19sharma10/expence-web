@@ -3,6 +3,7 @@ import { VectorIcon } from '../components/vector/VectorIcons';
 import { Banner } from '../components/ui/Field';
 import { useAuth } from '../contexts/AuthContext';
 import { useHousehold } from '../contexts/HouseholdContext';
+import { SkeletonGroup } from '../components/ui/Skeleton';
 import { formatMoney } from '../utils/format';
 
 /**
@@ -19,7 +20,7 @@ import { formatMoney } from '../utils/format';
  */
 export function LimitsScreen() {
   const { user } = useAuth();
-  const { household, members, categories, expenses, limits, setLimit, error } = useHousehold();
+  const { household, members, categories, expenses, limits, setLimit, error, loading } = useHousehold();
 
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
@@ -59,6 +60,17 @@ export function LimitsScreen() {
       setBusy(false);
     }
   };
+
+  // A blank screen while the lists arrive reads as broken. The skeletons
+  // hold the shape of the per-person sections until they do.
+  if (loading && (members.length === 0 || categories.length === 0)) {
+    return (
+      <div className="space-y-5">
+        <SkeletonGroup title="Spending limits" count={3} />
+        <SkeletonGroup title="Members" count={4} />
+      </div>
+    );
+  }
 
   if (members.length === 0 || categories.length === 0) return null;
 

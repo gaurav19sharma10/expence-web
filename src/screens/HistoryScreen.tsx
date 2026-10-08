@@ -6,6 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useHousehold } from '../contexts/HouseholdContext';
 import { formatMoney } from '../utils/format';
 import { matches, parseQuery } from '../lib/search';
+import { SkeletonGroup, SkeletonRows } from '../components/ui/Skeleton';
 
 /**
  * History, grouped by day.
@@ -14,7 +15,7 @@ import { matches, parseQuery } from '../lib/search';
  * through wants rows, not cards, and the day header carries the day's total.
  */
 export function HistoryScreen({ query }: { query: string }) {
-  const { expenses, categories, members, household } = useHousehold();
+  const { expenses, categories, members, household, loading } = useHousehold();
   const [payer, setPayer] = useState<string>('all');
   const currency = household?.baseCurrency || 'INR';
 
@@ -57,6 +58,23 @@ export function HistoryScreen({ query }: { query: string }) {
         total: list.reduce((sum, e) => sum + (e.baseAmountMinor || 0), 0),
       }));
   }, [expenses, categories, members, payer, query, parsed]);
+
+  // While the listener has not delivered, `days` is empty for lack of data
+  // rather than lack of expenses. The skeletons hold the shape of the grouped
+  // rows so the screen does not flash an empty state that is not true.
+  if (loading && days.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div className="flex animate-pulse flex-wrap gap-1.5" aria-hidden="true">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-7 w-20 rounded-full bg-surface-sunken" />
+          ))}
+        </div>
+        <SkeletonGroup title="Loading" count={3} />
+        <SkeletonRows count={2} />
+      </div>
+    );
+  }
 
   if (days.length === 0) {
     return (

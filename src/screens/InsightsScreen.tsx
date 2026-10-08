@@ -3,6 +3,7 @@ import { VectorIcon } from '../components/vector/VectorIcons';
 import { AllSettledIllustration } from '../components/vector/Illustrations';
 import { useAuth } from '../contexts/AuthContext';
 import { useHousehold } from '../contexts/HouseholdContext';
+import { SkeletonBars, SkeletonMemberRows } from '../components/ui/Skeleton';
 import { computeBalances } from '../lib/balance';
 import { formatMoney } from '../utils/format';
 
@@ -14,7 +15,7 @@ import { formatMoney } from '../utils/format';
  */
 export function InsightsScreen() {
   const { user } = useAuth();
-  const { members, expenses, settlements, household, categories } = useHousehold();
+  const { members, expenses, settlements, household, categories, loading } = useHousehold();
   const currency = household?.baseCurrency || 'INR';
 
   const balances = useMemo(
@@ -51,7 +52,11 @@ export function InsightsScreen() {
           Balances
         </span>
 
-        {members.length === 0 ? (
+        {loading && members.length === 0 ? (
+          <div className="mt-3">
+            <SkeletonMemberRows count={3} />
+          </div>
+        ) : members.length === 0 ? (
           <p className="mt-3 text-sm text-muted">No family members yet.</p>
         ) : balances.transfers.length === 0 ? (
           <div className="mt-4 flex items-center gap-4">
@@ -104,7 +109,9 @@ export function InsightsScreen() {
           All-time spending by category
         </span>
 
-        {top.length === 0 ? (
+        {loading && top.length === 0 ? (
+          <SkeletonBars count={5} />
+        ) : top.length === 0 ? (
           <p className="mt-3 text-sm text-muted">Nothing has been logged yet.</p>
         ) : (
           <div className="mt-4 space-y-3">

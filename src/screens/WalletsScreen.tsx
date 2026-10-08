@@ -4,6 +4,7 @@ import { Modal } from '../components/ui/Modal';
 import { Banner, Button, Field, SelectInput, TextInput } from '../components/ui/Field';
 import { useAuth } from '../contexts/AuthContext';
 import { useHousehold } from '../contexts/HouseholdContext';
+import { SkeletonGroup } from '../components/ui/Skeleton';
 import { formatMoney } from '../utils/format';
 
 /**
@@ -71,6 +72,7 @@ export function WalletsScreen() {
     walletRequests,
     creditWallet,
     transferWallet,
+    loading,
   } = useHousehold();
 
   const [creditFor, setCreditFor] = useState<string | null>(null);
@@ -302,7 +304,15 @@ export function WalletsScreen() {
         </LedgerGroup>
       )}
 
-      {moneyIn.length === 0 && transfers.length === 0 && spending.length === 0 && (
+      {loading && moneyIn.length === 0 && transfers.length === 0 && spending.length === 0 && (
+        <>
+          <SkeletonGroup title="Money in" count={2} />
+          <SkeletonGroup title="Transfers" count={2} />
+          <SkeletonGroup title="Spending" count={3} />
+        </>
+      )}
+
+      {!loading && moneyIn.length === 0 && transfers.length === 0 && spending.length === 0 && (
         <section className="rounded-3xl border border-line bg-surface px-5 py-6 text-center shadow-sm">
           <p className="text-xs font-semibold text-body">Nothing has moved yet</p>
           <p className="mt-1 text-[11px] leading-relaxed text-muted">

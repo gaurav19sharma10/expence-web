@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { VectorIcon } from '../components/vector/VectorIcons';
 import { useAuth } from '../contexts/AuthContext';
 import { useHousehold } from '../contexts/HouseholdContext';
+import { SkeletonMemberRows } from '../components/ui/Skeleton';
 
 /**
  * Who is in the family, and the code that lets somebody else in.
@@ -12,7 +13,7 @@ import { useHousehold } from '../contexts/HouseholdContext';
  */
 export function MembersScreen() {
   const { user, profile } = useAuth();
-  const { household, members, activity, leaveHousehold, error } = useHousehold();
+  const { household, members, activity, leaveHousehold, error, loading } = useHousehold();
   const [copied, setCopied] = useState<string | null>(null);
 
   const ownerUid = household?.ownerUid;
@@ -107,7 +108,10 @@ export function MembersScreen() {
         </div>
 
         <div>
-          {members.map((m: any, i: number) => (
+          {loading && members.length === 0 ? (
+            <SkeletonMemberRows count={3} />
+          ) : (
+          members.map((m: any, i: number) => (
             <div
               key={m.uid}
               className={`flex items-center gap-3 px-5 py-3.5 ${i > 0 ? 'border-t border-line' : ''}`}
@@ -134,7 +138,7 @@ export function MembersScreen() {
                 </span>
               )}
             </div>
-          ))}
+          )))}
         </div>
 
         <div className="border-t border-line px-5 py-3.5">

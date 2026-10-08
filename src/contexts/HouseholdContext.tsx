@@ -33,14 +33,19 @@ interface HouseholdContextType {
   wallets: any[];
   walletTxns: any[];
   limits: any[];
+  walletRequests: any[];
+  /** Ask the head of the family for money. Members only. */
+  requestMoney: (amountMinor: number, note: string | null) => Promise<void>;
+  /** Answer a pending request. Head of the family only. */
+  decideRequest: (requestId: string, approve: boolean) => Promise<void>;
   /** True while any write is still waiting on the network. */
   offline: boolean;
   setLimit: (uid: string, categoryId: string, capMinor: number) => Promise<void>;
   activity: any[];
   loading: boolean;
   error: string | null;
-  creditWallet: (uid: string, amountMinor: number, note: string) => Promise<void>;
-  transferWallet: (fromUid: string, toUid: string, amountMinor: number, note: string) => Promise<void>;
+  creditWallet: (uid: string, amountMinor: number, note: string | null) => Promise<void>;
+  transferWallet: (fromUid: string, toUid: string, amountMinor: number, note: string | null) => Promise<void>;
   createHousehold: (name: string, baseCurrency: string) => Promise<string>;
   joinHousehold: (code: string) => Promise<void>;
   leaveHousehold: () => Promise<void>;
@@ -138,6 +143,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   const [wallets, setWallets] = useState<any[]>([]);
   const [walletTxns, setWalletTxns] = useState<any[]>([]);
   const [limits, setLimits] = useState<any[]>([]);
+  const [walletRequests, setWalletRequests] = useState<any[]>([]);
   const [offline, setOffline] = useState(
     typeof navigator !== 'undefined' ? navigator.onLine === false : false,
   );
@@ -160,6 +166,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     setWallets([]);
     setWalletTxns([]);
     setLimits([]);
+    setWalletRequests([]);
     setActivity([]);
   };
 
@@ -230,6 +237,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     feed('topups', setTopups, orderBy('dateEpochDay', 'desc'), limit(100));
     feed('wallets', setWallets);
     feed('limits', setLimits);
+    feed('walletRequests', setWalletRequests, orderBy('createdAt', 'desc'), limit(60));
     feed('walletTxns', setWalletTxns, orderBy('at', 'desc'), limit(100));
     feed('activity', setActivity, orderBy('at', 'desc'), limit(60));
   };
@@ -288,6 +296,105 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener('offline', off);
     };
   }, []);
+
+  /**
+   * Asks the head of the family for money.
+   *
+   * Members only. The head tops their own wallet up directly with `creditWallet`,
+   * because asking yourself for permission is a tap that would always be answered
+   * yes. The rules pin `requestedBy` to the caller and `status` to PENDING, so a
+   * client cannot write itself an approved request.
+   */
+  const requestMoney = async (amountMinor: number, note: string | null) => {
+    if (!householdId) throw new Error('No household selected');
+    const user = requireUser();
+    const amount = Math.trunc(amountMinor);
+    if (!(amount > 0)) throw new Error('Enter an amount greater than zero.');
+
+    await addDoc(collection(db, 'households', householdId, 'walletRequests'), {
+      requestedBy: user.uid,
+      amountMinor: amount,
+      note: note?.trim() || null,
+      status: 'PENDING',
+      decidedBy: null,
+      decidedAt: null,
+      createdAt: Date.now(),
+    });
+
+    void logActivity('WALLET_REQUESTED', `Asked ${formatMinor(amount)} from the head of the family`, amount);
+  };
+
+  /**
+   * Answers a pending request. Head of the family only.
+   *
+   * Approval moves the money and answers the question in **one batch**: the head's
+   * wallet debited, the asker's credited, the request marked APPROVED, all
+   * atomically. Three separate writes would allow the worst outcome -- money taken
+   * from one person and never arriving, with the request still pending.
+   *
+   * The head may be overdrawn by approving. They are the one who decides, and
+   * refusing their own decision would leave the request stuck forever rather than
+   * resolved; the negative balance is what makes the overdraft visible.
+   */
+  const decideRequest = async (requestId: string, approve: boolean) => {
+    if (!householdId) throw new Error('No household selected');
+    const owner = requireOwner();
+    const request = walletRequests.find((r: any) => r.id === requestId);
+    if (!request) throw new Error('That request is gone.');
+    // Already answered: doing nothing is right, so a double tap cannot debit twice.
+    if (request.status !== 'PENDING') return;
+
+    const batch = writeBatch(db);
+
+    if (approve) {
+      const toUid = request.requestedBy as string;
+      const amount = Math.trunc(Number(request.amountMinor) || 0);
+      const fromBalance = Number(wallets.find((w: any) => w.uid === owner.uid)?.balanceMinor) || 0;
+      const toBalance = Number(wallets.find((w: any) => w.uid === toUid)?.balanceMinor) || 0;
+
+      batch.set(
+        doc(db, 'households', householdId, 'wallets', owner.uid),
+        { uid: owner.uid, balanceMinor: fromBalance - amount, updatedAt: Date.now(), updatedBy: owner.uid },
+        { merge: true },
+      );
+      batch.set(
+        doc(db, 'households', householdId, 'wallets', toUid),
+        {
+          uid: toUid,
+          balanceMinor: toBalance + amount,
+          updatedAt: Date.now(),
+          updatedBy: owner.uid,
+          grantedBy: owner.uid,
+        },
+        { merge: true },
+      );
+      batch.set(doc(collection(db, 'households', householdId, 'walletTxns')), {
+        householdId,
+        kind: 'CREDIT',
+        actorUid: owner.uid,
+        toUid,
+        amountMinor: amount,
+        note: request.note || 'Approved request',
+        at: Date.now(),
+      });
+    }
+
+    batch.update(doc(db, 'households', householdId, 'walletRequests', requestId), {
+      status: approve ? 'APPROVED' : 'DECLINED',
+      decidedBy: owner.uid,
+      decidedAt: Date.now(),
+    });
+
+    await batch.commit();
+
+    void logActivity(
+      approve ? 'WALLET_REQUEST_APPROVED' : 'WALLET_REQUEST_DECLINED',
+      approve
+        ? `Approved ${formatMinor(request.amountMinor)} for ${nameFor(request.requestedBy)}`
+        : `Declined a request from ${nameFor(request.requestedBy)}`,
+      approve ? Math.trunc(Number(request.amountMinor) || 0) : undefined,
+    );
+  };
 
   /** The head sets a cap on what a person may spend on a category. */
   const setLimit = async (uid: string, categoryId: string, capMinor: number) => {
@@ -630,7 +737,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
    * Credit and ledger row in one batch for the same reason as above: a balance
    * that moved without a row explaining it cannot be audited.
    */
-  const creditWallet = async (uid: string, amountMinor: number, note: string) => {
+  const creditWallet = async (uid: string, amountMinor: number, note: string | null) => {
     if (!householdId) throw new Error('No household selected');
     const owner = requireOwner();
     const amount = Math.trunc(amountMinor);
@@ -651,7 +758,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
       actorUid: owner.uid,
       toUid: uid,
       amountMinor: amount,
-      note: note.trim() || null,
+      note: note?.trim() || null,
       at: Date.now(),
     });
     await batch.commit();
@@ -665,7 +772,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
    * Both balances and both ledger rows go in one batch, so a transfer is never
    * half-applied.
    */
-  const transferWallet = async (fromUid: string, toUid: string, amountMinor: number, note: string) => {
+  const transferWallet = async (fromUid: string, toUid: string, amountMinor: number, note: string | null) => {
     if (!householdId) throw new Error('No household selected');
     const owner = requireOwner();
     const amount = Math.trunc(amountMinor);
@@ -693,7 +800,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
       fromUid,
       toUid,
       amountMinor: amount,
-      note: note.trim() || null,
+      note: note?.trim() || null,
       at: Date.now(),
     });
     await batch.commit();
@@ -813,7 +920,10 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
         wallets,
         walletTxns,
         limits,
+        walletRequests,
         offline,
+        requestMoney,
+        decideRequest,
         setLimit,
         activity,
         loading,

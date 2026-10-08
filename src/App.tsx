@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { RvsLogo } from './components/vector/RvsLogo';
 import { AppHeader, BottomNav } from './components/layout/AppHeader';
 import { InsightsSidebar } from './components/layout/InsightsSidebar';
+import { AllowanceBar } from './components/layout/AllowanceBar';
 import { LoginScreen } from './screens/LoginScreen';
 import { ProfileSetupScreen } from './screens/ProfileSetupScreen';
 import { OnboardingScreen } from './screens/OnboardingScreen';
@@ -45,6 +46,8 @@ function Shell() {
         themeMode === 'dark' ? 'dark' : ''
       }`}
     >
+      <AllowanceBar />
+
       {offline && (
         <div className="border-b border-line bg-amber-500/15 px-4 py-2 text-center text-[11px] font-semibold text-amber-700 dark:text-amber-300">
           Offline — anything you add is saved on this device and syncs when you are back.

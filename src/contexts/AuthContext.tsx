@@ -6,7 +6,13 @@ import {
   createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
 } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import {
+  doc,
+  getDoc,
+  setDoc,
+  clearIndexedDbPersistence,
+  terminate,
+} from 'firebase/firestore';
 import { getAuthInstance, db } from '../services/firebase';
 import { UserProfile } from '../types';
 
@@ -117,6 +123,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     await firebaseSignOut(getAuthInstance());
+    // Clear the local Firestore cache so the next person signed into this
+    // browser inherits a cold, empty start instead of the previous account's
+    // household. Best-effort: the account is signed out either way.
+    // The Firestore instance cannot be used again once terminated, so clearing
+    // the cache is a one-off. Cold-start afterwards: the signed-in screen asks
+    // for an account, and the next account starts from an empty local store
+    // rather than a cache of the previous one.
+    try {
+      await terminate(db);
+      await clearIndexedDbPersistence(db);
+    } catch {
+      /* already terminated, or no persistence layer to clear */
+    }
+    window.location.reload();
   };
 
   /**

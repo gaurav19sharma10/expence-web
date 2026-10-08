@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useHousehold } from '../contexts/HouseholdContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { formatMoney } from '../utils/format';
+import { buildLine } from '../lib/build';
 
 export function SettingsScreen({ onNavigate }: { onNavigate: (screen: 'profile') => void }) {
   const { signOut } = useAuth();
@@ -93,6 +94,7 @@ export function SettingsScreen({ onNavigate }: { onNavigate: (screen: 'profile')
       <p className="px-1 text-center text-[11px] text-faint">
         Expence · realtime Firestore ledger shared with your Android app.
       </p>
+      <p className="px-1 text-center font-mono text-[10px] text-faint">{buildLine()}</p>
     </div>
   );
 }

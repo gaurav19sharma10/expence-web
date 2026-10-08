@@ -13,7 +13,7 @@ import { formatMoney } from '../utils/format';
  */
 export function HomeScreen({ query }: { query: string }) {
   const { user } = useAuth();
-  const { household, expenses, members } = useHousehold();
+  const { household, expenses, members, wallets } = useHousehold();
   const [scope, setScope] = useState<'all' | 'mine'>('all');
   const currency = household?.baseCurrency || 'INR';
 
@@ -28,8 +28,13 @@ export function HomeScreen({ query }: { query: string }) {
       month: month.reduce((sum: number, e: any) => sum + (e.baseAmountMinor || 0), 0),
       all: live.reduce((sum: number, e: any) => sum + (e.baseAmountMinor || 0), 0),
       count: live.length,
+      allowance: members.reduce(
+        (sum: number, m: any) =>
+          sum + (Number(wallets.find((w: any) => w.uid === m.uid)?.balanceMinor) || 0),
+        0,
+      ),
     };
-  }, [expenses]);
+  }, [expenses, members, wallets]);
 
   return (
     <div>
@@ -38,6 +43,11 @@ export function HomeScreen({ query }: { query: string }) {
         <Stat label="All time" value={formatMoney(stats.all, currency)} />
         <Stat label="Expenses" value={String(stats.count)} />
         <Stat label="Members" value={String(members.length)} />
+        <Stat
+          label="Allowance left"
+          value={formatMoney(stats.allowance, currency)}
+          accent={stats.allowance < 0}
+        />
       </div>
 
       <QuickAdd />
@@ -70,15 +80,23 @@ function Stat({
   label,
   value,
   accent,
+  negative,
 }: {
   label: string;
   value: string;
   accent?: boolean;
+  negative?: boolean;
 }) {
   return (
     <div className="rounded-2xl border border-line bg-surface px-4 py-3 shadow-sm">
       <p className="text-[10px] font-bold uppercase tracking-wider text-faint">{label}</p>
-      <p className={`mt-0.5 text-base font-bold ${accent ? 'text-brand' : 'text-body'}`}>{value}</p>
+      <p
+        className={`mt-0.5 text-base font-bold ${
+          negative ? 'text-negative' : accent ? 'text-brand' : 'text-body'
+        }`}
+      >
+        {value}
+      </p>
     </div>
   );
 }

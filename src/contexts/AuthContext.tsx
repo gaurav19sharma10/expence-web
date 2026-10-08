@@ -60,7 +60,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 function profileFromUser(user: User): UserProfile {
   return {
     uid: user.uid,
-    displayName: user.displayName || (user.email || '').split('@')[0] || 'User',
+    displayName: (user.email || '').split('@')[0] || 'You',
     email: user.email || '',
     displayCurrency: 'INR',
     householdIds: [],

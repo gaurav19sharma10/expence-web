@@ -133,7 +133,7 @@ function generateInviteCode(): string {
 }
 
 export function HouseholdProvider({ children }: { children: React.ReactNode }) {
-  const { profile } = useAuth();
+  const { user, profile } = useAuth();
   const [householdId, setHouseholdId] = useState<string | null>(null);
   const [household, setHousehold] = useState<any | null>(null);
   const [members, setMembers] = useState<any[]>([]);
@@ -278,6 +278,32 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   }, [profile?.householdIds?.join(','), profile?.profileCompleted]);
 
   useEffect(() => closeListeners, []);
+
+  /*
+   * The name typed in the app has to be the name the family reads.
+   *
+   * Member rows are seeded once, when the household is created or joined, and
+   * until the user edits their profile they name them by the email local part --
+   * or, for an account added from Google, by the Google account name. Nobody
+   * ever touches them again, so every household label for that person stays
+   * wrong until being signed out. The profile document is the only mutable
+   * copy, so this effect stamps it onto the member row in each household the
+   * person belongs to, and re-stamps it whenever it changes.
+   */
+  const activeName = profile?.displayName?.trim();
+  const householdKey = (profile?.householdIds ?? []).join(',');
+  useEffect(() => {
+    const uid = user?.uid;
+    if (!uid || !activeName) return;
+    for (const hid of profile?.householdIds ?? []) {
+      updateDoc(doc(db, 'households', hid, 'members', uid), {
+        displayName: activeName,
+      }).catch(() => {
+        /* corrected the next time the profile saves */
+      });
+    }
+    // householdKey tracks the joined list; displayName edits bump the effect too.
+  }, [user?.uid, activeName, householdKey]);
 
   /**
    * Whether the device is offline.
@@ -459,7 +485,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     });
 
     batch.set(doc(db, 'households', hid, 'members', user.uid), {
-      displayName: displayName || user.displayName || 'User',
+      displayName: displayName || (user?.email || '').split('@')[0] || 'User',
       email: user.email,
       photoURL: null,
       role: 'OWNER',
@@ -477,7 +503,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     });
 
     batch.update(doc(db, 'users', user.uid), {
-      displayName: displayName || user.displayName || 'User',
+      displayName: displayName || (user?.email || '').split('@')[0] || 'User',
       displayCurrency: baseCurrency,
       householdIds: arrayUnion(hid),
     });
@@ -564,7 +590,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     const batch = writeBatch(db);
 
     batch.set(doc(db, 'households', hid, 'members', user.uid), {
-      displayName: displayName || user.displayName || 'User',
+      displayName: displayName || (user?.email || '').split('@')[0] || 'User',
       email: user.email,
       photoURL: null,
       role: 'MEMBER',
@@ -885,7 +911,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
         householdId,
         kind,
         actorUid: user.uid,
-        actorName: displayName || user.displayName || 'Someone',
+        actorName: displayName || (user?.email || '').split('@')[0] || 'Someone',
         summary,
         amountMinor: amountMinor ?? null,
         targetId: targetId ?? null,

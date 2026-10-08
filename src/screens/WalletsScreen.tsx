@@ -19,9 +19,59 @@ import { formatMoney } from '../utils/format';
  * and repeated as a banner at the top of the screen rather than left to be
  * discovered by scrolling.
  */
+/**
+ * One titled block of the ledger.
+ *
+ * Kept as a component so the four groups are built identically — a group that
+ * looks slightly different from its neighbours reads as a different kind of fact,
+ * and the point of splitting them is that each answers one question.
+ */
+function LedgerGroup({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="overflow-hidden rounded-3xl border border-line bg-surface shadow-sm">
+      <div className="border-b border-line px-5 py-3.5">
+        <span className="text-[11px] font-bold uppercase tracking-wider text-faint">{title}</span>
+      </div>
+      <div>{children}</div>
+    </section>
+  );
+}
+
+function LedgerRow({
+  first,
+  children,
+}: {
+  first: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={`flex items-center justify-between gap-3 px-5 py-2.5 ${
+        first ? '' : 'border-t border-line'
+      }`}
+    >
+      {children}
+    </div>
+  );
+}
+
 export function WalletsScreen() {
   const { user } = useAuth();
-  const { household, members, wallets, walletTxns, creditWallet, transferWallet } = useHousehold();
+  const {
+    household,
+    members,
+    wallets,
+    walletTxns,
+    walletRequests,
+    creditWallet,
+    transferWallet,
+  } = useHousehold();
 
   const [creditFor, setCreditFor] = useState<string | null>(null);
   const [transferOpen, setTransferOpen] = useState(false);
@@ -46,7 +96,23 @@ export function WalletsScreen() {
     members.find((m: any) => m.uid === uid)?.displayName || 'Someone';
   const nameOf = nameFor;
 
-  const recent = walletTxns.filter((t: any) => t.kind !== 'SPEND').slice(0, 6);
+  /*
+   * The ledger is split by kind instead of merged into one list.
+   *
+   * A single "recent activity" list reads as complete but is not: it hid every
+   * spend, so the screen answered "who did you pay?" with silence, and the head
+   * — who is the one person who can be asked — had no way to reconstruct it.
+   * Three groups, each answering one question:
+   *   money in   — what the family was given
+   *   transfers  — a deliberate move between wallets
+   *   spending   — debits taken by expenses
+   * Plus the requests the head answered, which are decisions rather than movements
+   * and are the record of *whom they approved and whom they turned down*.
+   */
+  const moneyIn = walletTxns.filter((t: any) => t.kind === 'CREDIT');
+  const transfers = walletTxns.filter((t: any) => t.kind === 'TRANSFER');
+  const spending = walletTxns.filter((t: any) => t.kind === 'SPEND');
+  const decided = walletRequests.filter((r: any) => r.status !== 'PENDING');
 
   const close = () => {
     setCreditFor(null);
@@ -169,33 +235,80 @@ export function WalletsScreen() {
         })}
       </div>
 
-      {recent.length > 0 && (
-        <section className="overflow-hidden rounded-3xl border border-line bg-surface shadow-sm">
-          <div className="border-b border-line px-5 py-3.5">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-faint">
-              Wallet activity
-            </span>
-          </div>
-          <div>
-            {recent.map((t: any, i: number) => (
-              <div
-                key={t.id}
-                className={`flex items-center justify-between gap-3 px-5 py-2.5 ${
-                  i > 0 ? 'border-t border-line' : ''
+      {decided.length > 0 && (
+        <LedgerGroup title="Requests you answered">
+          {decided.map((r: any, i: number) => (
+            <LedgerRow key={r.id} first={i === 0}>
+              <span className="min-w-0 truncate text-xs text-body">
+                {nameOf(r.requestedBy)} asked for {formatMoney(r.amountMinor, currency)}
+                {r.note ? ` · ${r.note}` : ''}
+              </span>
+              <span
+                className={`shrink-0 text-xs font-bold ${
+                  r.status === 'APPROVED' ? 'text-positive' : 'text-negative'
                 }`}
               >
-                <p className="min-w-0 truncate text-xs text-body">
-                  {t.kind === 'TRANSFER'
-                    ? `${nameOf(t.fromUid)} → ${nameOf(t.toUid)}`
-                    : `Topped up ${nameOf(t.toUid)}`}
-                  {t.note ? ` · ${t.note}` : ''}
-                </p>
-                <span className="shrink-0 text-xs font-bold text-positive">
-                  +{formatMoney(t.amountMinor, currency)}
-                </span>
-              </div>
-            ))}
-          </div>
+                {r.status === 'APPROVED' ? 'Approved' : 'Declined'}
+              </span>
+            </LedgerRow>
+          ))}
+        </LedgerGroup>
+      )}
+
+      {moneyIn.length > 0 && (
+        <LedgerGroup title="Money in">
+          {moneyIn.map((t: any, i: number) => (
+            <LedgerRow key={t.id} first={i === 0}>
+              <span className="min-w-0 truncate text-xs text-body">
+                {t.note ? `Topped up ${nameOf(t.toUid)} · ${t.note}` : `Topped up ${nameOf(t.toUid)}`}
+              </span>
+              <span className="shrink-0 text-xs font-bold text-positive">
+                +{formatMoney(t.amountMinor, currency)}
+              </span>
+            </LedgerRow>
+          ))}
+        </LedgerGroup>
+      )}
+
+      {transfers.length > 0 && (
+        <LedgerGroup title="Transfers">
+          {transfers.map((t: any, i: number) => (
+            <LedgerRow key={t.id} first={i === 0}>
+              <span className="min-w-0 truncate text-xs text-body">
+                {nameOf(t.fromUid)} → {nameOf(t.toUid)}
+                {t.note ? ` · ${t.note}` : ''}
+              </span>
+              <span className="shrink-0 text-xs font-bold text-body">
+                {formatMoney(t.amountMinor, currency)}
+              </span>
+            </LedgerRow>
+          ))}
+        </LedgerGroup>
+      )}
+
+      {spending.length > 0 && (
+        <LedgerGroup title="Spending">
+          {spending.map((t: any, i: number) => (
+            <LedgerRow key={t.id} first={i === 0}>
+              <span className="min-w-0 truncate text-xs text-body">
+                {t.description || 'Expense'}
+                <span className="text-faint"> · {nameOf(t.actorUid)}</span>
+              </span>
+              <span className="shrink-0 text-xs font-bold text-negative">
+                −{formatMoney(Math.abs(Number(t.amountMinor) || 0), currency)}
+              </span>
+            </LedgerRow>
+          ))}
+        </LedgerGroup>
+      )}
+
+      {moneyIn.length === 0 && transfers.length === 0 && spending.length === 0 && (
+        <section className="rounded-3xl border border-line bg-surface px-5 py-6 text-center shadow-sm">
+          <p className="text-xs font-semibold text-body">Nothing has moved yet</p>
+          <p className="mt-1 text-[11px] leading-relaxed text-muted">
+            Money you add, requests you approve, and expenses logged by the family all appear
+            here, each naming who was on either side.
+          </p>
         </section>
       )}
 

@@ -15,6 +15,7 @@ import {
   writeBatch,
   arrayUnion,
   arrayRemove,
+  increment,
   Unsubscribe,
 } from 'firebase/firestore';
 import { auth, db } from '../services/firebase';
@@ -349,19 +350,18 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     if (approve) {
       const toUid = request.requestedBy as string;
       const amount = Math.trunc(Number(request.amountMinor) || 0);
-      const fromBalance = Number(wallets.find((w: any) => w.uid === owner.uid)?.balanceMinor) || 0;
-      const toBalance = Number(wallets.find((w: any) => w.uid === toUid)?.balanceMinor) || 0;
-
+      // Both sides increment. The requester's credit is applied to whatever is
+      // actually stored, not to a number captured before the batch was built.
       batch.set(
         doc(db, 'households', householdId, 'wallets', owner.uid),
-        { uid: owner.uid, balanceMinor: fromBalance - amount, updatedAt: Date.now(), updatedBy: owner.uid },
+        { uid: owner.uid, balanceMinor: increment(-amount), updatedAt: Date.now(), updatedBy: owner.uid },
         { merge: true },
       );
       batch.set(
         doc(db, 'households', householdId, 'wallets', toUid),
         {
           uid: toUid,
-          balanceMinor: toBalance + amount,
+          balanceMinor: increment(amount),
           updatedAt: Date.now(),
           updatedBy: owner.uid,
           grantedBy: owner.uid,
@@ -673,12 +673,11 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
       const amount = Math.trunc(Number(share) || 0);
       if (amount === 0) continue;
       const walletRef = doc(db, 'households', householdId, 'wallets', uid);
-      const current = wallets.find((w: any) => w.uid === uid);
-      const next = (Number(current?.balanceMinor) || 0) - amount;
-
+      // An increment, not the absolute figure the last snapshot produced. Read-
+      // then-write silently discards anything that landed in between; this cannot.
       batch.set(
         walletRef,
-        { uid, balanceMinor: next, updatedAt: Date.now(), updatedBy: user.uid },
+        { uid, balanceMinor: increment(-amount), updatedAt: Date.now(), updatedBy: user.uid },
         { merge: true },
       );
       walletMoves++;
@@ -743,13 +742,10 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     const amount = Math.trunc(amountMinor);
     if (!(amount > 0)) throw new Error('Enter an amount greater than zero.');
 
-    const current = wallets.find((w: any) => w.uid === uid);
-    const next = (Number(current?.balanceMinor) || 0) + amount;
-
     const batch = writeBatch(db);
     batch.set(
       doc(db, 'households', householdId, 'wallets', uid),
-      { uid, balanceMinor: next, updatedAt: Date.now(), updatedBy: owner.uid, grantedBy: owner.uid },
+      { uid, balanceMinor: increment(amount), updatedAt: Date.now(), updatedBy: owner.uid, grantedBy: owner.uid },
       { merge: true },
     );
     batch.set(doc(collection(db, 'households', householdId, 'walletTxns')), {
@@ -779,18 +775,15 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     if (!(amount > 0)) throw new Error('Enter an amount greater than zero.');
     if (fromUid === toUid) throw new Error('Pick two different people.');
 
-    const from = (Number(wallets.find((w: any) => w.uid === fromUid)?.balanceMinor) || 0) - amount;
-    const to = (Number(wallets.find((w: any) => w.uid === toUid)?.balanceMinor) || 0) + amount;
-
     const batch = writeBatch(db);
     batch.set(
       doc(db, 'households', householdId, 'wallets', fromUid),
-      { uid: fromUid, balanceMinor: from, updatedAt: Date.now(), updatedBy: owner.uid },
+      { uid: fromUid, balanceMinor: increment(-amount), updatedAt: Date.now(), updatedBy: owner.uid },
       { merge: true },
     );
     batch.set(
       doc(db, 'households', householdId, 'wallets', toUid),
-      { uid: toUid, balanceMinor: to, updatedAt: Date.now(), updatedBy: owner.uid, grantedBy: owner.uid },
+      { uid: toUid, balanceMinor: increment(amount), updatedAt: Date.now(), updatedBy: owner.uid, grantedBy: owner.uid },
       { merge: true },
     );
     batch.set(doc(collection(db, 'households', householdId, 'walletTxns')), {

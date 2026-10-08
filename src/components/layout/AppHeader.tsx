@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { RvsLogo } from '../vector/RvsLogo';
 import { VectorIcon } from '../vector/VectorIcons';
 import { useAuth } from '../../contexts/AuthContext';
+import { BalancePill } from './BalancePill';
 import { useHousehold } from '../../contexts/HouseholdContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import type { Screen } from '../../screens/navigation';
@@ -109,6 +110,8 @@ export function AppHeader({ screen, onNavigate, query, onQueryChange }: Props) {
             <span className={`size-2 rounded-full ${loading ? 'animate-pulse bg-amber-500' : 'bg-emerald-500'}`} />
             {loading ? 'Syncing' : `${members.length} live`}
           </div>
+
+          <BalancePill />
 
           <div className="relative" ref={menuRef}>
             <button

@@ -13,7 +13,7 @@ import { formatMoney } from '../utils/format';
  */
 export function HomeScreen({ query, onQueryChange }: { query: string; onQueryChange: (value: string) => void }) {
   const { user } = useAuth();
-  const { household, expenses, members, loading } = useHousehold();
+  const { household, expenses, members, loading, goals } = useHousehold();
   const [scope, setScope] = useState<'all' | 'mine'>('all');
   const currency = household?.baseCurrency || 'INR';
 
@@ -56,6 +56,48 @@ export function HomeScreen({ query, onQueryChange }: { query: string; onQueryCha
           />
         </div>
       </div>
+
+      {/*
+        Goals widget (§28).
+        Privacy is the whole difficulty: the dashboard is shared by everybody in
+        the household, so this may only ever show goals the viewer is allowed to
+        know about. `goals` already contains only their own goals and the shared
+        ones they are in -- the Firestore rules enforce that, not a filter here --
+        so rendering it is safe by construction rather than by remembering to
+        filter.
+      */}
+      {!loading && goals.length > 0 && (
+        <section className="mt-3 rounded-2xl border border-line bg-surface p-4 shadow-sm">
+          <div className="flex items-baseline justify-between">
+            <h2 className="font-semibold">Goals</h2>
+            <span className="text-sm text-muted">
+              {formatMoney(goals.reduce((sum: number, g: any) => sum + (Number(g.savedMinor) || 0), 0), currency)} saved
+            </span>
+          </div>
+          <p className="text-xs text-muted">
+            {goals.filter((g: any) => g.status === 'ACTIVE').length} active ·{' '}
+            {goals.filter((g: any) => g.status === 'ACTIVE').slice(0, 3).map((g: any) => g.emoji).join(' ')}
+          </p>
+          {/* Two or three, never the lot: a dashboard that scrolls for nine goals
+              is a list wearing a dashboard's clothes. */}
+          <ul className="mt-3 space-y-2">
+            {goals
+              .filter((g: any) => g.status === 'ACTIVE')
+              .slice(0, 3)
+              .map((g: any) => (
+                <li key={g.id} className="flex items-center justify-between gap-2">
+                  <span className="min-w-0 truncate text-sm">
+                    {g.emoji} {g.name}
+                    {(g.participantIds || []).length === 0 && <span className="ml-1">🔒</span>}
+                  </span>
+                  <span className="shrink-0 text-xs text-muted">
+                    {formatMoney(g.savedMinor, currency)} of {formatMoney(g.targetMinor, currency)}
+                  </span>
+                </li>
+              ))}
+          </ul>
+        </section>
+      )}
 
       {/* Skeleton covers the same grid while Firestore is still delivering. */}
       {loading ? (

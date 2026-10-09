@@ -50,6 +50,27 @@ const TEMPLATES = [
   { emoji: '\u{1F381}', title: 'A gift', category: 'OTHER', suggestionMinor: 1000000 },
 ];
 
+/**
+ * "You need about \u20b98,334/month to reach this by then."
+ *
+ * Shown on the date step rather than only later, because this is where somebody
+ * decides whether the target they typed is realistic.
+ */
+function monthlyNeededText(targetMajor: string, dueIso: string, currency: string): JSX.Element | null {
+  const amount = Number(targetMajor) || 0;
+  if (amount <= 0 || !dueIso) return null;
+  const ms = new Date(`${dueIso}T00:00:00`).getTime() - Date.now();
+  if (ms <= 0) return null;
+  const months = Math.max(1, Math.floor(ms / (30 * 86400000)));
+  const perMonth = Math.round(amount / months);
+  if (perMonth <= 0) return null;
+  return (
+    <p className="text-sm text-brand">
+      You need about {formatMoney(perMonth * 100, currency)} a month to reach this by then.
+    </p>
+  );
+}
+
 const EMOJI = [
   '\u{1F3AF}', '\u{1F6B2}', '\u{1F393}', '\u{1F3E0}', '\u{2708}\u{FE0F}', '\u{1F48D}', '\u{1F697}', '\u{1F4F1}',
   '\u{1F3B8}', '\u{1FA91}', '\u{1F4BB}', '\u{1F476}', '\u{1F434}', '\u{1F3E5}', '\u{1F381}', '\u{1F436}',
@@ -79,11 +100,22 @@ function percent(goal: any): number {
 
 export function GoalsScreen() {
   const { user } = useAuth();
-  const { household, members, goals, goalSettings, wallets, createGoal, contributeToGoal, saveGoalSettings } =
-    useHousehold();
+  const {
+    household,
+    members,
+    goals,
+    goalSettings,
+    wallets,
+    createGoal,
+    contributeToGoal,
+    saveGoalSettings,
+    updateGoalDetails,
+    deleteGoal,
+  } = useHousehold();
 
   const [filter, setFilter] = useState<Filter>('ALL');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [txns, setTxns] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
@@ -126,6 +158,11 @@ export function GoalsScreen() {
           setTxns([]);
           setError(null);
         }}
+        onEdit={onEdit}
+        onDelete={(id) => {
+          void deleteGoal(id);
+          onBack();
+        }}
         onContribute={async (amountMinor, note) => {
           setBusy(true);
           setError(null);
@@ -133,6 +170,35 @@ export function GoalsScreen() {
             await contributeToGoal(selected.id, amountMinor, note);
           } catch (err: any) {
             setError(err?.message || 'Could not add that.');
+          } finally {
+            setBusy(false);
+          }
+        }}
+      />
+    );
+  }
+
+  if (editingId) {
+    const goal = goals.find((g: any) => g.id === editingId);
+    if (!goal) {
+      setEditingId(null);
+      return null;
+    }
+    return (
+      <EditGoal
+        goal={goal}
+        currency={currency}
+        busy={busy}
+        error={error}
+        onCancel={() => setEditingId(null)}
+        onSave={async (details: any) => {
+          setBusy(true);
+          setError(null);
+          try {
+            await updateGoalDetails(goal.id, details);
+            setEditingId(null);
+          } catch (err: any) {
+            setError(err?.message || 'Could not save those changes.');
           } finally {
             setBusy(false);
           }
@@ -338,6 +404,8 @@ function GoalDetail({
   error,
   onBack,
   onContribute,
+  onEdit,
+  onDelete,
 }: {
   goal: any;
   txns: any[];
@@ -348,9 +416,12 @@ function GoalDetail({
   error: string | null;
   onBack: () => void;
   onContribute: (amountMinor: number, note?: string | null) => void;
+  onEdit: (goal: any) => void;
+  onDelete: (goalId: string) => void;
 }) {
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const nameOf = (uid: string) => members.find((m: any) => m.uid === uid)?.displayName || 'Member';
   const isPrivate = (goal.participantIds || []).length === 0;
 
@@ -413,6 +484,37 @@ function GoalDetail({
         </Button>
       </section>
 
+      <InsightFor goal={goal} currency={currency} />
+
+      <section className="space-y-2 rounded-lg border border-line p-4">
+        <h2 className="font-medium">Manage this goal</h2>
+        <div className="flex gap-2">
+          <Button variant="ghost" onClick={() => onEdit(goal)}>
+            Edit goal
+          </Button>
+          <Button variant="ghost" onClick={() => setConfirmDelete(true)}>
+            Delete goal
+          </Button>
+        </div>
+        {confirmDelete && (
+          <div className="mt-2 space-y-2 rounded-xl border border-line p-3">
+            <p className="text-sm">
+              {Number(goal.savedMinor) > 0
+                ? `This goal holds ${formatMoney(goal.savedMinor, currency)}. It will be deleted; its history stays in your records, but take the money out first if you want it back.`
+                : 'This goal has no money in it, so nothing is lost.'}
+            </p>
+            <div className="flex gap-2">
+              <Button variant="danger" onClick={() => onDelete(goal.id)}>
+                Delete
+              </Button>
+              <Button variant="ghost" onClick={() => setConfirmDelete(false)}>
+                Keep it
+              </Button>
+            </div>
+          </div>
+        )}
+      </section>
+
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">Activity</h2>
         {txns.length === 0 ? (
@@ -449,7 +551,132 @@ const TXN_LABEL: Record<string, string> = {
   ADJUSTMENT: 'Adjusted',
 };
 
+/**
+ * One sentence about where this is heading (§17).
+ *
+ * Deliberately not a chart. With a deadline the useful statement is what a month
+ * of saving would achieve; without one there is nothing honest to project, so it
+ * says nothing rather than inventing a number.
+ */
+function InsightFor({ goal, currency }: { goal: any; currency: string }) {
+  const percent = Number(goal.targetMinor) > 0
+    ? Math.min(100, Math.floor((Number(goal.savedMinor) * 100) / Number(goal.targetMinor)))
+    : 100;
+  if (percent >= 100) return null;
+
+  let text: string | null = null;
+  if (goal.targetDateEpochDay) {
+    const daysLeft = Number(goal.targetDateEpochDay) - Math.floor(Date.now() / 86400000);
+    if (daysLeft <= 0) {
+      text = "This goal's date has passed. You can change it or keep saving.";
+    } else {
+      const months = Math.max(1, Math.floor(daysLeft / 30));
+      const perMonth = Math.round(remaining(goal) / months);
+      text = `To reach ${goal.name} by then, save about ${formatMoney(perMonth, currency)} a month.`;
+    }
+  } else if (percent >= 80) {
+    text = `You're ${100 - percent}% away from ${goal.name}. Keep it up.`;
+  }
+  if (!text) return null;
+  return (
+    <div className="rounded-xl bg-surface-sunken p-3 text-sm text-muted">
+      {text}
+    </div>
+  );
+}
+
+/** Editing the parts of a goal that may change. */
+function EditGoal({
+  goal,
+  currency,
+  busy,
+  error,
+  onCancel,
+  onSave,
+}: {
+  goal: any;
+  currency: string;
+  busy: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onSave: (details: any) => void;
+}) {
+  const [name, setName] = useState(goal.name || '');
+  const [target, setTarget] = useState(String((Number(goal.targetMinor) || 0) / 100));
+  const [due, setDue] = useState(
+    goal.targetDateEpochDay
+      ? new Date(Number(goal.targetDateEpochDay) * 86400000).toISOString().slice(0, 10)
+      : '',
+  );
+
+  return (
+    <div className="mx-auto max-w-xl space-y-4">
+      <button onClick={onCancel} className="text-sm text-muted hover:underline">
+        &larr; Cancel
+      </button>
+      <h1 className="text-2xl font-semibold">Edit goal</h1>
+
+      <Field label="Goal name">
+        <input
+          className="w-full bg-transparent text-sm outline-none"
+          value={name}
+          maxLength={60}
+          onChange={(e) => setName(e.target.value)}
+        />
+      </Field>
+
+      <Field label="Target amount">
+        <input
+          className="w-full bg-transparent text-sm outline-none"
+          value={target}
+          inputMode="decimal"
+          onChange={(e) => setTarget(e.target.value)}
+        />
+      </Field>
+
+      <div>
+        <label className="block text-[11px] font-bold uppercase tracking-wider text-muted">By when?</label>
+        <input
+          type="date"
+          value={due}
+          min={new Date().toISOString().slice(0, 10)}
+          onChange={(e) => setDue(e.target.value)}
+          className="mt-1 w-full rounded-xl border border-line bg-surface-sunken px-3 py-2.5 text-sm"
+        />
+        <Button variant="subtle" size="sm" className="mt-2" onClick={() => setDue('')}>
+          No deadline
+        </Button>
+      </div>
+
+      {error && <Banner tone="error">{error}</Banner>}
+
+      <Button
+        disabled={busy || !name.trim() || !(Number(target) > 0)}
+        onClick={() =>
+          onSave({
+            name: name.trim(),
+            emoji: goal.emoji,
+            category: goal.category,
+            targetMinor: Math.round(Number(target) * 100),
+            targetDateEpochDay: due ? Math.floor(new Date(`${due}T00:00:00`).getTime() / 86400000) : null,
+          })
+        }
+      >
+        {busy ? 'Saving...' : 'Save changes'}
+      </Button>
+    </div>
+  );
+}
+
 /** Automatic saving. Every control says what it does in money. */
+/**
+ * Automatic savings: how money reaches a goal without anybody thinking about it.
+ *
+ * This is where the round-up level is chosen, so it is the screen that makes the
+ * headline feature configurable at all. Everything is spelled in money rather than
+ * as percentages and configuration keys, because the whole point is that a
+ * first-time user can set it without reading anything.
+ */
 function GoalSettingsCard({
   settings,
   goals,
@@ -461,29 +688,34 @@ function GoalSettingsCard({
   currency: string;
   onSave: (next: any) => void;
 }) {
-  const fundable = goals.filter((g: any) => g.status === 'ACTIVE' && !reached(g));
   const [open, setOpen] = useState(false);
+  const [custom, setCustom] = useState('');
 
   if (!settings) return <SkeletonGroup title="Saving" count={4} />;
+
+  const fundable = goals.filter((g: any) => g.status === 'ACTIVE' && !reached(g));
+  const roundTo = settings.roundUpCustomMinor || settings.roundUpToMinor || 0;
 
   return (
     <section className="rounded-lg border border-line p-4">
       <button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between">
-        <span className="font-medium">Save automatically</span>
+        <span className="font-medium">Save your spare change automatically</span>
         <span className="text-sm text-muted">{open ? 'Hide' : 'Change'}</span>
       </button>
+
       {!open && (
         <p className="mt-1 text-xs text-muted">
           {settings.roundUpEnabled
-            ? `Rounding up to the next ${formatMoney(settings.roundUpToMinor, currency)}`
+            ? `Rounding up to the nearest ${formatMoney(roundTo, currency)}`
             : 'No automatic saving on'}
           {settings.dailyEnabled ? `, ${formatMoney(settings.dailyAmountMinor, currency)} a day` : ''}
           {settings.monthlyEnabled ? `, ${formatMoney(settings.monthlyAmountMinor, currency)} a month` : ''}
           .
         </p>
       )}
+
       {open && (
-        <div className="mt-3 space-y-3">
+        <div className="mt-3 space-y-4">
           {fundable.length === 0 && (
             <p className="text-xs text-muted">Start a goal first, then automatic saving has somewhere to go.</p>
           )}
@@ -494,38 +726,160 @@ function GoalSettingsCard({
               checked={Boolean(settings.roundUpEnabled)}
               onChange={(e) => onSave({ roundUpEnabled: e.target.checked })}
             />
-            Round up my spending into a goal
+            Round up my spending
           </label>
+
           {settings.roundUpEnabled && (
             <>
-              <Field label="Round up to">
+              <Field label="Round up to the nearest">
                 <SelectInput
-                  value={String(settings.roundUpToMinor)}
-                  onChange={(e) => onSave({ roundUpToMinor: Number(e.target.value) })}
+                  value={settings.roundUpCustomMinor ? 'custom' : String(roundTo)}
+                  onChange={(e) => {
+                    if (e.target.value === 'custom') {
+                      onSave({ roundUpCustomMinor: roundTo });
+                      setCustom(String(roundTo / 100));
+                    } else {
+                      onSave({ roundUpToMinor: Number(e.target.value), roundUpCustomMinor: null });
+                      setCustom('');
+                    }
+                  }}
                 >
-                  <option value="10">{formatMoney(1000, currency)}</option>
-                  <option value="50">{formatMoney(5000, currency)}</option>
-                  <option value="100">{formatMoney(10000, currency)}</option>
-                  <option value="500">{formatMoney(50000, currency)}</option>
+                  <option value="1000">{formatMoney(1000, currency)}</option>
+                  <option value="5000">{formatMoney(5000, currency)}</option>
+                  <option value="10000">{formatMoney(10000, currency)}</option>
+                  <option value="50000">{formatMoney(50000, currency)}</option>
+                  <option value="custom">Something else</option>
                 </SelectInput>
               </Field>
-              {fundable.length > 1 && (
-                <Field label="Send it to">
-                  <SelectInput
-                    value={settings.roundUpGoalId || ''}
-                    onChange={(e) => onSave({ roundUpGoalId: e.target.value || null })}
-                  >
-                    <option value="">Spread across my goals</option>
-                    {fundable.map((g: any) => (
-                      <option key={g.id} value={g.id}>
-                        {g.emoji} {g.name}
-                      </option>
-                    ))}
-                  </SelectInput>
+
+              {settings.roundUpCustomMinor && (
+                <Field label="Your round number">
+                  <input
+                    className="w-full bg-transparent text-sm outline-none"
+                    value={custom}
+                    inputMode="decimal"
+                    onChange={(e) => {
+                      setCustom(e.target.value);
+                      const minor = Math.round(Number(e.target.value) * 100);
+                      if (minor > 0) onSave({ roundUpCustomMinor: minor });
+                    }}
+                  />
                 </Field>
+              )}
+
+              {/* The worked example from the spec: the only way to tell
+                  "₹20 from ₹480" from "₹500 from ₹480" without doing the sum. */}
+              <p className="text-xs text-muted">
+                For example, a {formatMoney(48000, currency)} expense becomes {formatMoney(Math.ceil(48000 / roundTo) * roundTo, currency)},
+                and the extra {formatMoney(Math.ceil(48000 / roundTo) * roundTo - 48000, currency)} goes to your goal.
+              </p>
+
+              <Field label="Send it to">
+                <SelectInput
+                  value={settings.roundUpGoalId || ''}
+                  onChange={(e) => onSave({ roundUpGoalId: e.target.value || null })}
+                >
+                  <option value="">Spread across my goals</option>
+                  {fundable.map((g: any) => (
+                    <option key={g.id} value={g.id}>
+                      {g.emoji} {g.name}
+                    </option>
+                  ))}
+                </SelectInput>
+              </Field>
+
+              {/* Allocation percentages, only when there is a choice to make. */}
+              {fundable.length > 1 && !settings.roundUpGoalId && (
+                <div className="space-y-2">
+                  <p className="text-xs font-bold uppercase tracking-wider text-muted">Split between goals</p>
+                  {fundable.map((g: any) => (
+                    <div key={g.id} className="flex items-center justify-between gap-2">
+                      <span className="text-sm">
+                        {g.emoji} {g.name}
+                      </span>
+                      <SelectInput
+                        className="w-28"
+                        value={String(settings.roundUpWeights?.[g.id] ?? 1)}
+                        onChange={(e) =>
+                          onSave({
+                            roundUpWeights: {
+                              ...(settings.roundUpWeights || {}),
+                              [g.id]: Number(e.target.value),
+                            },
+                          })
+                        }
+                      >
+                        <option value="1">20%</option>
+                        <option value="2">40%</option>
+                        <option value="3">60%</option>
+                        <option value="5">100%</option>
+                      </SelectInput>
+                    </div>
+                  ))}
+                  <p className="text-xs text-muted">
+                    It is divided by these shares, so they do not have to add up to 100.
+                  </p>
+                </div>
               )}
             </>
           )}
+
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={Boolean(settings.dailyEnabled)}
+              onChange={(e) => onSave({ dailyEnabled: e.target.checked })}
+            />
+            Save every day
+          </label>
+          {settings.dailyEnabled && (
+            <>
+              <Field label="How much each day">
+                <input
+                  className="w-full bg-transparent text-sm outline-none"
+                  inputMode="decimal"
+                  defaultValue={String((settings.dailyAmountMinor || 0) / 100)}
+                  onBlur={(e) => onSave({ dailyAmountMinor: Math.round(Number(e.target.value) * 100) })}
+                />
+              </Field>
+              <p className="text-xs text-muted">
+                That is about {formatMoney((settings.dailyAmountMinor || 0) * 30, currency)} a month.
+              </p>
+            </>
+          )}
+
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={Boolean(settings.monthlyEnabled)}
+              onChange={(e) => onSave({ monthlyEnabled: e.target.checked })}
+            />
+            Save every month
+          </label>
+          {settings.monthlyEnabled && (
+            <Field label="How much each month">
+              <input
+                className="w-full bg-transparent text-sm outline-none"
+                inputMode="decimal"
+                defaultValue={String((settings.monthlyAmountMinor || 0) / 100)}
+                onBlur={(e) => onSave({ monthlyAmountMinor: Math.round(Number(e.target.value) * 100) })}
+              />
+            </Field>
+          )}
+
+          {/* One switch to stop everything, because somebody who wants it all to
+              stop should not have to find three toggals to turn off. */}
+          <Button
+            variant="ghost"
+            onClick={() => onSave({ roundUpEnabled: false, dailyEnabled: false, monthlyEnabled: false })}
+          >
+            Pause all automatic saving
+          </Button>
+
+          <p className="text-xs text-muted">
+            Automatic savings only move money you have already chosen to move, and every one is written to
+            the goal's history so you can see exactly what went in and when.
+          </p>
         </div>
       )}
     </section>
@@ -554,6 +908,8 @@ function CreateGoalWizard({
   const [name, setName] = useState('');
   const [emoji, setEmoji] = useState('\u{1F3AF}');
   const [target, setTarget] = useState('');
+  const [due, setDue] = useState('');
+  const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [participants, setParticipants] = useState<string[]>([]);
   const [saveMode, setSaveMode] = useState('MANUAL');
   const [auto, setAuto] = useState('');
@@ -576,7 +932,7 @@ function CreateGoalWizard({
       setLocalError('Set how much you are saving for.');
       return;
     }
-    if (step < WIZARD_STEPS.length - 1) {
+    if (step < WIZARD_STEPS.length) {
       setStep(step + 1);
       return;
     }
@@ -584,6 +940,7 @@ function CreateGoalWizard({
       name: name.trim(),
       emoji,
       targetMinor,
+      targetDateEpochDay: due ? Math.floor(new Date(`${due}T00:00:00`).getTime() / 86400000) : null,
       participantIds: participants,
       saveMode,
       autoAmountMinor: Math.round((Number(auto) || 0) * 100),
@@ -669,15 +1026,36 @@ function CreateGoalWizard({
       )}
 
       {picked && step === 2 && (
-        <>
+        <div className="space-y-3">
           <TextInput
             value={target}
             onChange={(e) => setTarget(e.target.value)}
             inputMode="decimal"
             placeholder="Target amount"
           />
-          <p className="text-xs text-muted">No deadline is fine. A target is the part that matters.</p>
-        </>
+          {/* A real date control, not a typed one. "By when" feeds the insight that
+              says how much a month would take to get there, and nobody can compute
+              that from a date they had to guess the format of. */}
+          <div>
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-muted">
+              By when?
+            </label>
+            <input
+              type="date"
+              value={due}
+              min={todayIso}
+              onChange={(e) => setDue(e.target.value)}
+              className="mt-1 w-full rounded-xl border border-line bg-surface-sunken px-3 py-2.5 text-sm"
+            />
+            <Button variant="subtle" size="sm" className="mt-2" onClick={() => setDue('')}>
+              No deadline
+            </Button>
+            <p className="mt-1 text-xs text-muted">
+              {due ? 'Saving up to this date.' : 'No deadline \u2014 save whenever you can.'}
+            </p>
+          </div>
+          {monthlyNeededText(target, due, currency)}
+        </div>
       )}
 
       {picked && step === 3 && (
@@ -737,6 +1115,43 @@ function CreateGoalWizard({
 
       {picked && (localError || error) && <Banner tone="error">{localError || error}</Banner>}
 
+          {picked && step === WIZARD_STEPS.length && (
+        <div className="rounded-lg border border-line p-4">
+          <p className="text-2xl">
+            {emoji} {name}
+          </p>
+          <dl className="mt-3 space-y-1 text-sm">
+            <div className="flex justify-between">
+              <dt className="text-muted">Target</dt>
+              <dd>{formatMoney(targetMinor, currency)}</dd>
+            </div>
+            <div className="flex justify-between">
+              <dt className="text-muted">By</dt>
+              <dd>{due ? new Date(`${due}T00:00:00`).toLocaleDateString() : 'No deadline'}</dd>
+            </div>
+            <div className="flex justify-between">
+              <dt className="text-muted">Saving with</dt>
+              <dd>
+                {participants.length <= 1
+                  ? 'Just you'
+                  : participants.map((uid) => members.find((m: any) => m.uid === uid)?.displayName || 'Member').join(', ')}
+              </dd>
+            </div>
+            <div className="flex justify-between">
+              <dt className="text-muted">How it fills</dt>
+              <dd>
+                {SAVE_MODE_LABEL[saveMode]}
+                {(saveMode === 'DAILY' || saveMode === 'MONTHLY') &&
+                  ` of ${formatMoney(Math.round(Number(auto || 0) * 100), currency)}`}
+              </dd>
+            </div>
+          </dl>
+          <p className="mt-3 text-xs text-muted">
+            You can change any of this later, and stop automatic saving whenever you want.
+          </p>
+        </div>
+      )}
+
       {picked && (
       <div className="flex items-center gap-2">
         {step > 0 && (
@@ -745,7 +1160,7 @@ function CreateGoalWizard({
           </Button>
         )}
         <Button className="ml-auto" disabled={busy} onClick={next}>
-          {busy ? 'Saving...' : step === WIZARD_STEPS.length - 1 ? 'Create goal' : 'Next'}
+          {busy ? 'Saving...' : step === WIZARD_STEPS.length ? 'Create goal' : 'Next'}
         </Button>
       </div>
       )}

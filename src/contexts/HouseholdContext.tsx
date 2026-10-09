@@ -66,6 +66,8 @@ interface HouseholdContextType {
   requestGoalSpending: (goalId: string, amountMinor: number, reason: string, participantIds: string[], note?: string | null) => Promise<string>;
   answerGoalSpending: (goalId: string, requestId: string, approve: boolean) => Promise<void>;
   saveGoalSettings: (settings: Partial<GoalSettings>) => Promise<void>;
+  updateGoalDetails: (goalId: string, details: any) => Promise<void>;
+  deleteGoal: (goalId: string) => Promise<void>;
   logActivity: (kind: string, summary: string, amountMinor?: number, targetId?: string) => Promise<void>;
   refreshData: () => void;
 }
@@ -1058,7 +1060,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
         at: now,
       });
     });
-    void logActivity('GOAL_FUNDED', `Saved towards a goal`, amount, goalId);
+    void logActivity('GOAL_FUNDED', `added money to a goal`, amount, goalId);
   };
 
   /**
@@ -1269,6 +1271,39 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  /**
+   * Edits a goal's own details.
+   *
+   * Name, picture, category, target and date only. The balance and the
+   * participants are deliberately not editable here: changing a target while
+   * money is already saved against the old one would rewrite what everybody
+   * contributed toward.
+   */
+  const updateGoalDetails = async (goalId: string, details: any) => {
+    if (!householdId) throw new Error('No household selected');
+    const name = String(details.name || '').trim();
+    const targetMinor = Math.trunc(Number(details.targetMinor) || 0);
+    if (!name) throw new Error('Give the goal a name.');
+    if (targetMinor <= 0) throw new Error('Set a target greater than zero.');
+    await updateDoc(doc(db, 'households', householdId, 'goals', goalId), {
+      name: name.slice(0, 60),
+      emoji: details.emoji || '\u{1F3AF}',
+      category: details.category || 'OTHER',
+      targetMinor,
+      targetDateEpochDay: details.targetDateEpochDay ?? null,
+      updatedAt: Date.now(),
+    });
+    void logActivity('GOAL_EDITED', `edited ${name}`, targetMinor, goalId);
+  };
+
+  /** Deletes a goal. The ledger under it is left alone on purpose. */
+  const deleteGoal = async (goalId: string) => {
+    if (!householdId) throw new Error('No household selected');
+    const goalName = goals.find((g: any) => g.id === goalId)?.name || 'a goal';
+    await deleteDoc(doc(db, 'households', householdId, 'goals', goalId));
+    void logActivity('GOAL_DELETED', `deleted ${goalName}`, undefined, goalId);
+  };
+
   const saveGoalSettings = async (settings: Partial<GoalSettings>) => {
     if (!householdId) throw new Error('No household selected');
     const user = requireUser();
@@ -1351,6 +1386,8 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
         requestGoalSpending,
         answerGoalSpending,
         saveGoalSettings,
+        updateGoalDetails,
+        deleteGoal,
         logActivity,
         refreshData,
       }}

@@ -100,7 +100,7 @@ function percent(goal: any): number {
 
 export function GoalsScreen() {
   const { user } = useAuth();
-  const { observeGoalTxns } = useHousehold();
+  const { observeGoalTxns, goalTxns } = useHousehold();
   const {
     household,
     members,
@@ -120,6 +120,13 @@ export function GoalsScreen() {
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // The open goal's ledger. Started when a goal is opened and torn down when it
+  // closes, so the list is never listening to a goal nobody is looking at.
+  useEffect(() => {
+    if (!household?.id || !selectedId) return;
+    return observeGoalTxns(household.id, selectedId);
+  }, [household?.id, selectedId, observeGoalTxns]);
 
   const currency = household?.baseCurrency || 'INR';
   const myWallet = wallets.find((w: any) => w.uid === user?.uid);

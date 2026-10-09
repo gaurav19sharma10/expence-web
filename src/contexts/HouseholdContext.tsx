@@ -248,6 +248,12 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   const subscribe = (hid: string) => {
     closeListeners();
 
+    // Resolved once and guarded, rather than dereferenced inside each listener.
+    // Every goals and settings subscription is scoped to this person, so with
+    // nobody signed in there is nothing to subscribe to.
+    const uid = user?.uid;
+    if (!uid) return;
+
     listeners.current.push(
       onSnapshot(
         doc(db, 'households', hid),
@@ -305,17 +311,25 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     // added to arrives twice and is de-duplicated below.
     feed('goals', (rows) => {
       setGoals((previous) => mergeGoals(previous, rows));
-    }, where('ownerUid', '==', user.uid));
+    }, where('ownerUid', '==', uid));
     feed('goals', (rows) => {
       setGoals((previous) => mergeGoals(previous, rows));
-    }, where('participantIds', 'array-contains', user.uid));
+    }, where('participantIds', 'array-contains', uid));
 
     // Preferences are private to the signed-in person: nobody else in the family
     // has a say in how their spare change is saved.
     listeners.current.push(
       onSnapshot(
-        doc(db, 'households', hid, 'goalSettings', user.uid),
-        (snap) => setGoalSettings(snap.exists() ? ({ uid: user.uid, ...EMPTY_GOAL_SETTINGS, ...snap.data() } as GoalSettings) : { ...EMPTY_GOAL_SETTINGS, uid: user.uid }),
+        doc(db, 'households', hid, 'goalSettings', uid),
+        // uid last: putting it before the spreads let the document's own copy win,
+        // which TypeScript flags because a key written twice is a mistake even
+        // when the duplicate happens to agree.
+        (snap) =>
+          setGoalSettings(
+            snap.exists()
+              ? ({ ...EMPTY_GOAL_SETTINGS, ...snap.data(), uid } as GoalSettings)
+              : { ...EMPTY_GOAL_SETTINGS, uid },
+          ),
         (err) => console.error('goalSettings read failed:', err),
       ),
     );

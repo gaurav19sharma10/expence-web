@@ -464,7 +464,7 @@ function GoalSettingsCard({
   const fundable = goals.filter((g: any) => g.status === 'ACTIVE' && !reached(g));
   const [open, setOpen] = useState(false);
 
-  if (!settings) return <SkeletonGroup />;
+  if (!settings) return <SkeletonGroup title="Saving" count={4} />;
 
   return (
     <section className="rounded-lg border border-line p-4">

@@ -10,6 +10,7 @@ import { HistoryScreen } from './screens/HistoryScreen';
 import { InsightsScreen } from './screens/InsightsScreen';
 import { MembersScreen } from './screens/MembersScreen';
 import { WalletsScreen } from './screens/WalletsScreen';
+import { GoalsScreen } from './screens/GoalsScreen';
 import { LimitsScreen } from './screens/LimitsScreen';
 import { CategoriesScreen } from './screens/CategoriesScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
@@ -70,6 +71,7 @@ function Shell() {
                 {screen === 'insights' && <InsightsScreen />}
                 {screen === 'members' && <MembersScreen />}
                 {screen === 'wallets' && <WalletsScreen />}
+                {screen === 'goals' && <GoalsScreen />}
                 {screen === 'limits' && <LimitsScreen />}
                 {screen === 'profile' && <ProfileScreen />}
                 {screen === 'settings' && (

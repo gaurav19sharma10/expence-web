@@ -10,9 +10,11 @@ import {
   deleteDoc,
   onSnapshot,
   query,
+  where,
   orderBy,
   limit,
   writeBatch,
+  runTransaction,
   arrayUnion,
   arrayRemove,
   increment,
@@ -21,7 +23,7 @@ import {
 import { auth, db } from '../services/firebase';
 import { useAuth } from './AuthContext';
 import { formatMoney } from '../utils/format';
-import { CategoryFormData } from '../types';
+import { CategoryFormData, GoalSettings } from '../types';
 
 interface HouseholdContextType {
   householdId: string | null;
@@ -30,7 +32,8 @@ interface HouseholdContextType {
   categories: any[];
   expenses: any[];
   settlements: any[];
-  topups: any[];
+  goals: any[];
+  goalSettings: GoalSettings;
   wallets: any[];
   walletTxns: any[];
   limits: any[];
@@ -57,7 +60,12 @@ interface HouseholdContextType {
   updateExpense: (id: string, data: any) => Promise<void>;
   deleteExpense: (id: string) => Promise<void>;
   addSettlement: (data: any) => Promise<string>;
-  addTopup: (data: any) => Promise<string>;
+  createGoal: (data: any) => Promise<string>;
+  contributeToGoal: (goalId: string, amountMinor: number, note?: string | null) => Promise<void>;
+  applyRoundUp: (expenseId: string, baseAmountMinor: number) => Promise<number>;
+  requestGoalSpending: (goalId: string, amountMinor: number, reason: string, participantIds: string[], note?: string | null) => Promise<string>;
+  answerGoalSpending: (goalId: string, requestId: string, approve: boolean) => Promise<void>;
+  saveGoalSettings: (settings: Partial<GoalSettings>) => Promise<void>;
   logActivity: (kind: string, summary: string, amountMinor?: number, targetId?: string) => Promise<void>;
   refreshData: () => void;
 }
@@ -107,6 +115,57 @@ const CACHE_KEY = 'expence_household_id';
  * `Object.getPrototypeOf(value) === Object.prototype` is what keeps it from
  * walking into Firestore's own value objects.
  */
+/**
+ * Folds one goals listener's rows into the list the other one is filling.
+ *
+ * The two queries overlap: a goal the user created *and* was added to comes back
+ * from both, and both carries the fresher copy because each write lands on both
+ * subscriptions. Merging by id rather than replacing means the list does not
+ * flicker between two partial halves.
+ */
+function mergeGoals(previous: any[], rows: any[]): any[] {
+  const byId = new Map(previous.map((goal) => [goal.id, goal]));
+  rows.forEach((row) => byId.set(row.id, { ...byId.get(row.id), ...row }));
+  return Array.from(byId.values()).sort(goalOrdering);
+}
+
+/** Active first, then nearest the target, then by name: a list you act on. */
+function goalOrdering(a: any, b: any): number {
+  const finished = (g: any) => (g.status === 'ACTIVE' ? 0 : 1);
+  if (finished(a) !== finished(b)) return finished(a) - finished(b);
+  const remainingA = a.targetMinor > 0 ? a.targetMinor - a.savedMinor : Number.MAX_SAFE_INTEGER;
+  const remainingB = b.targetMinor > 0 ? b.targetMinor - b.savedMinor : Number.MAX_SAFE_INTEGER;
+  if (remainingA !== remainingB) return remainingA - remainingB;
+  return String(a.name || '').localeCompare(String(b.name || ''));
+}
+
+/** The next multiple of `roundTo` above `amount`; zero if it is already on one. */
+function nextRoundUp(amountMinor: number, roundTo: number): number {
+  if (amountMinor <= 0 || roundTo <= 0) return 0;
+  const remainder = amountMinor % roundTo;
+  return remainder === 0 ? 0 : roundTo - remainder;
+}
+
+function reached(goal: any): boolean {
+  return Number(goal?.targetMinor) > 0 && Number(goal?.savedMinor) >= Number(goal.targetMinor);
+}
+
+const EMPTY_GOAL_SETTINGS: GoalSettings = {
+  uid: '',
+  roundUpEnabled: true,
+  roundUpToMinor: 100,
+  roundUpCustomMinor: null,
+  roundUpGoalId: null,
+  roundUpWeights: {},
+  dailyEnabled: false,
+  dailyAmountMinor: 0,
+  dailyGoalId: null,
+  monthlyEnabled: false,
+  monthlyAmountMinor: 0,
+  monthlyDayOfMonth: 1,
+  monthlyGoalId: null,
+};
+
 function assertNoUndefined(value: unknown, path = 'document'): void {
   if (value === undefined) {
     throw new Error(`Cannot save: ${path} has no value.`);
@@ -140,7 +199,8 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   const [categories, setCategories] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
   const [settlements, setSettlements] = useState<any[]>([]);
-  const [topups, setTopups] = useState<any[]>([]);
+  const [goals, setGoals] = useState<any[]>([]);
+  const [goalSettings, setGoalSettings] = useState<GoalSettings | null>(null);
   const [wallets, setWallets] = useState<any[]>([]);
   const [walletTxns, setWalletTxns] = useState<any[]>([]);
   const [limits, setLimits] = useState<any[]>([]);
@@ -163,7 +223,8 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     setCategories([]);
     setExpenses([]);
     setSettlements([]);
-    setTopups([]);
+    setGoals([]);
+    setGoalSettings(null);
     setWallets([]);
     setWalletTxns([]);
     setLimits([]);
@@ -235,7 +296,30 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     feed('categories', setCategories, orderBy('order'));
     feed('expenses', setExpenses, orderBy('dateEpochDay', 'desc'), limit(500));
     feed('settlements', setSettlements, orderBy('dateEpochDay', 'desc'), limit(200));
-    feed('topups', setTopups, orderBy('dateEpochDay', 'desc'), limit(100));
+    // Goals are read twice on purpose. The rule is "you may read this if you own
+    // it *or* you participate in it", and one query asking for the whole
+    // collection is denied outright -- Firestore has to be able to prove that
+    // every document coming back is one the caller may see, and it cannot reason
+    // about a disjunction it has not been told about. Constraining each half
+    // separately makes each query provable. A goal the user both created and was
+    // added to arrives twice and is de-duplicated below.
+    feed('goals', (rows) => {
+      setGoals((previous) => mergeGoals(previous, rows));
+    }, where('ownerUid', '==', user.uid));
+    feed('goals', (rows) => {
+      setGoals((previous) => mergeGoals(previous, rows));
+    }, where('participantIds', 'array-contains', user.uid));
+
+    // Preferences are private to the signed-in person: nobody else in the family
+    // has a say in how their spare change is saved.
+    listeners.current.push(
+      onSnapshot(
+        doc(db, 'households', hid, 'goalSettings', user.uid),
+        (snap) => setGoalSettings(snap.exists() ? ({ uid: user.uid, ...EMPTY_GOAL_SETTINGS, ...snap.data() } as GoalSettings) : { ...EMPTY_GOAL_SETTINGS, uid: user.uid }),
+        (err) => console.error('goalSettings read failed:', err),
+      ),
+    );
+
     feed('wallets', setWallets);
     feed('limits', setLimits);
     feed('walletRequests', setWalletRequests, orderBy('createdAt', 'desc'), limit(60));
@@ -750,6 +834,14 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
       );
     }
 
+    // The round-up runs after the expense is committed, never inside its batch:
+    // the expense is what the user actually asked to record, and a failed
+    // round-up must not turn a saved meal into an error. So it is swallowed here
+    // and reported through the goal ledger if it succeeds.
+    void applyRoundUp(expenseRef.id, Number(expenseData.baseAmountMinor) || 0).catch((err) => {
+      console.error('Round-up failed:', err);
+    });
+
     return expenseRef.id;
   };
 
@@ -863,32 +955,311 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     return ref.id;
   };
 
-  const addTopup = async (data: any) => {
+  const createGoal = async (data: any) => {
     if (!householdId) throw new Error('No household selected');
     const user = requireUser();
-    const clean: Record<string, number> = {};
-    let total = 0;
-    Object.entries(data.contributions || {}).forEach(([uid, minor]) => {
-      const value = Number(minor) || 0;
-      if (value > 0) {
-        clean[uid] = value;
-        total += value;
-      }
-    });
-    if (total === 0) throw new Error('Nobody contributed.');
+    const name = String(data.name || '').trim();
+    if (!name) throw new Error('Give the goal a name.');
+    const targetMinor = Math.trunc(Number(data.targetMinor) || 0);
+    if (targetMinor <= 0) throw new Error('Set a target greater than zero.');
 
-    const payload = {
-      ...data,
-      contributions: clean,
-      baseAmountMinor: total,
+    // The creator is always a participant. A goal whose participant list excluded
+    // its owner would be invisible to everybody, which is a quiet way to lose
+    // somebody's money -- the rules check this too.
+    const participantIds = Array.from(
+      new Set([...(data.participantIds || []), user.uid].filter(Boolean)),
+    );
+
+    const payload: Record<string, any> = {
       householdId,
+      name: name.slice(0, 60),
+      emoji: data.emoji || '\u{1F3AF}',
+      category: data.category || 'OTHER',
+      targetMinor,
+      targetDateEpochDay: data.targetDateEpochDay ?? null,
+      participantIds,
+      ownerUid: user.uid,
+      savedMinor: 0,
+      status: 'ACTIVE',
+      saveMode: data.saveMode || 'MANUAL',
+      autoAmountMinor: Math.max(0, Math.trunc(Number(data.autoAmountMinor) || 0)),
+      autoDayOfMonth: 1,
+      currency: household?.baseCurrency || 'INR',
       createdAt: Date.now(),
-      createdBy: user.uid,
+      updatedAt: Date.now(),
     };
-    assertNoUndefined(payload, 'topup');
-    const ref = await addDoc(collection(db, 'households', householdId, 'topups'), payload);
-    void logActivity('TOPUP_ADDED', 'Added to the family pot', total, ref.id);
+    assertNoUndefined(payload, 'goal');
+    const ref = await addDoc(collection(db, 'households', householdId, 'goals'), payload);
+    void logActivity('GOAL_CREATED', `Started the goal ${name}`, targetMinor, ref.id);
     return ref.id;
+  };
+
+  /**
+   * Puts money into a goal, out of the contributor's own wallet.
+   *
+   * Three documents move together in one transaction: the wallet goes down, the
+   * goal goes up, and a ledger row says why. Without that last row a balance is a
+   * number rather than a record, and without the transaction the goal can be
+   * funded by money that was never taken.
+   */
+  const contributeToGoal = async (goalId: string, amountMinor: number, note?: string | null) => {
+    if (!householdId) throw new Error('No household selected');
+    const user = requireUser();
+    const amount = Math.trunc(Number(amountMinor) || 0);
+    if (amount <= 0) throw new Error('Enter an amount greater than zero.');
+
+    const goalRef = doc(db, 'households', householdId, 'goals', goalId);
+    const walletRef = doc(db, 'households', householdId, 'wallets', user.uid);
+    const txnRef = doc(collection(goalRef, 'goalTxns'));
+    const now = Date.now();
+
+    // All reads before all writes: Firestore rejects a transaction that reads
+    // after it has written, and fails it at runtime rather than at compile time.
+    await runTransaction(db, async (tx) => {
+      const [goalSnap, walletSnap] = await Promise.all([tx.get(goalRef), tx.get(walletRef)]);
+      const goal = goalSnap.data() as any;
+      if (!goal) throw new Error('That goal no longer exists.');
+      if (goal.status === 'CLOSED' || goal.status === 'CANCELLED') {
+        throw new Error('This goal is closed, so it cannot take money.');
+      }
+      if (goal.ownerUid !== user.uid && !(goal.participantIds || []).includes(user.uid)) {
+        throw new Error('You are not part of this goal.');
+      }
+      if (!walletSnap.exists()) throw new Error('You do not have a wallet to save from yet.');
+
+      tx.update(walletRef, { balanceMinor: increment(-amount), updatedAt: now, updatedBy: user.uid });
+      tx.update(goalRef, {
+        savedMinor: increment(amount),
+        lastTxnId: txnRef.id,
+        updatedAt: now,
+      });
+      tx.set(txnRef, {
+        goalId,
+        householdId,
+        actorUid: user.uid,
+        amountMinor: amount,
+        type: 'MANUAL_CONTRIBUTION',
+        sourceExpenseId: null,
+        note: note || null,
+        at: now,
+      });
+    });
+    void logActivity('GOAL_FUNDED', `Saved towards a goal`, amount, goalId);
+  };
+
+  /**
+   * Banks the spare change from an expense.
+   *
+   * Only the payer's wallet, and only what they paid themselves: rounding up the
+   * total of a shared dinner into one person's savings would take money from
+   * people who were never charged in the first place.
+   */
+  const applyRoundUp = async (expenseId: string, baseAmountMinor: number) => {
+    if (!householdId) return 0;
+    const user = requireUser();
+    // Falls back to the defaults rather than treating "not loaded yet" as
+    // "turned off". The two are indistinguishable from here, and the second one
+    // silently swallows the spare change.
+    const settings = goalSettings ?? EMPTY_GOAL_SETTINGS;
+    if (!settings.roundUpEnabled) return 0;
+    const roundTo = settings.roundUpCustomMinor || settings.roundUpToMinor || 0;
+    if (roundTo <= 0) return 0;
+
+    const spare = nextRoundUp(baseAmountMinor, roundTo);
+    if (spare <= 0) return 0;
+
+    const targets = goals.filter((g: any) => g.status === 'ACTIVE' && !reached(g));
+    if (targets.length === 0) return 0;
+    const chosen = settings.roundUpGoalId
+      ? targets.filter((g: any) => g.id === settings.roundUpGoalId)
+      : targets;
+    const pool = chosen.length > 0 ? chosen : targets;
+
+    // Weights are a share, not a trusted percentage: normalised below, so 30/70
+    // and 3/7 mean the same thing.
+    const weights: Record<string, number> =
+      pool.length > 1 && Object.keys(settings.roundUpWeights || {}).length > 0
+        ? settings.roundUpWeights
+        : Object.fromEntries(pool.map((g: any) => [g.id, 1]));
+    const totalWeight = pool.reduce((sum: number, g: any) => sum + Math.max(1, weights[g.id] || 1), 0);
+
+    let allocated = 0;
+    const parts = pool.map((goal: any, index: number) => {
+      // The last goal takes the remainder, so a split never leaves paise behind.
+      const share =
+        index === pool.length - 1
+          ? spare - allocated
+          : Math.trunc((spare * Math.max(1, weights[goal.id] || 1)) / totalWeight) || 0;
+      allocated += share;
+      return { goalId: goal.id, share };
+    }).filter((p: any) => p.share > 0);
+
+    if (parts.length === 0) return 0;
+
+    const walletRef = doc(db, 'households', householdId, 'wallets', user.uid);
+    const now = Date.now();
+    const txnRefs = parts.map((p: any) => doc(collection(doc(db, 'households', householdId, 'goals', p.goalId), 'goalTxns')));
+
+    await runTransaction(db, async (tx) => {
+      const walletSnap = await tx.get(walletRef);
+      if (!walletSnap.exists()) return;
+      tx.update(walletRef, { balanceMinor: increment(-spare), updatedAt: now, updatedBy: user.uid });
+      parts.forEach((p: any, index: number) => {
+        tx.update(doc(db, 'households', householdId, 'goals', p.goalId), {
+          savedMinor: increment(p.share),
+          lastTxnId: txnRefs[index].id,
+          updatedAt: now,
+          lastAutoRunEpochDay: Math.floor(now / 86400000),
+        });
+        tx.set(txnRefs[index], {
+          goalId: p.goalId,
+          householdId,
+          actorUid: user.uid,
+          amountMinor: p.share,
+          type: 'ROUND_UP',
+          sourceExpenseId: expenseId,
+          note: 'Spare change from an expense',
+          at: now,
+        });
+      });
+    });
+    return spare;
+  };
+
+  /**
+   * Asks to spend from a shared goal. No money moves here: it waits for everybody.
+   *
+   * `requiredCount` excludes the asker, who cannot approve their own request.
+   */
+  const requestGoalSpending = async (
+    goalId: string,
+    amountMinor: number,
+    reason: string,
+    participantIds: string[],
+    note?: string | null,
+  ) => {
+    if (!householdId) throw new Error('No household selected');
+    const user = requireUser();
+    const amount = Math.trunc(Number(amountMinor) || 0);
+    if (amount <= 0) throw new Error('Enter an amount greater than zero.');
+    const everyone = Array.from(new Set(participantIds || [])).filter(Boolean);
+    if (everyone.length < 2) {
+      throw new Error('A shared goal needs more than one person to approve spending.');
+    }
+
+    const requestRef = doc(collection(doc(db, 'households', householdId, 'goals', goalId), 'goalSpendRequests'));
+    const now = Date.now();
+    const batch = writeBatch(db);
+    batch.set(requestRef, {
+      goalId,
+      householdId,
+      requestedByUid: user.uid,
+      requestedByName: profile?.displayName || 'Someone',
+      amountMinor: amount,
+      reason: String(reason || '').trim(),
+      note: note || null,
+      status: 'PENDING',
+      participantIds: everyone,
+      requiredCount: everyone.length - 1,
+      approvedCount: 0,
+      rejectedCount: 0,
+      createdAt: now,
+      releasedAt: null,
+      resolvedAt: null,
+    });
+    // An explicit "has not voted" document per person, so the screen can show who
+    // is holding it up without inferring from a missing row.
+    everyone.forEach((uid: string) => {
+      batch.set(doc(collection(requestRef, 'approvals'), uid), {
+        goalId,
+        uid,
+        displayName: uid,
+        state: 'PENDING',
+        decidedAt: null,
+      });
+    });
+    await batch.commit();
+    return requestRef.id;
+  };
+
+  /**
+   * Answers a request. The money moves only if this was the last vote.
+   *
+   * The rules own the arithmetic -- they require the tally to move by exactly one
+   * and to match this participant's own vote document -- so this does not
+   * recompute unanimity, it casts the vote and lets the rules accept or refuse
+   * the resulting tally. Two people tapping at once cannot both release it,
+   * because `releasedAt` is checked inside the transaction.
+   */
+  const answerGoalSpending = async (goalId: string, requestId: string, approve: boolean) => {
+    if (!householdId) throw new Error('No household selected');
+    const user = requireUser();
+    const requestRef = doc(
+      collection(doc(db, 'households', householdId, 'goals', goalId), 'goalSpendRequests'),
+      requestId,
+    );
+    const voteRef = doc(collection(requestRef, 'approvals'), user.uid);
+    const goalRef = doc(db, 'households', householdId, 'goals', goalId);
+    const txnRef = doc(collection(goalRef, 'goalTxns'));
+    const now = Date.now();
+    const state = approve ? 'APPROVED' : 'REJECTED';
+
+    await runTransaction(db, async (tx) => {
+      const [reqSnap, goalSnap] = await Promise.all([tx.get(requestRef), tx.get(goalRef)]);
+      const req = reqSnap.data() as any;
+      const goal = goalSnap.data() as any;
+      if (!req) throw new Error('That request no longer exists.');
+      if (req.status !== 'PENDING') throw new Error('This request has already been answered.');
+      const participants: string[] = req.participantIds || [];
+      if (participants.length < 2) {
+        throw new Error('A shared goal needs more than one person to approve spending.');
+      }
+      if (req.requestedByUid === user.uid) {
+        throw new Error('You asked for this one, so somebody else has to approve it.');
+      }
+      if (!participants.includes(user.uid)) throw new Error('You are not part of this goal.');
+
+      const savedMinor = Number(goal?.savedMinor) || 0;
+      const oldApproved = Math.trunc(Number(req.approvedCount) || 0);
+      const oldRejected = Math.trunc(Number(req.rejectedCount) || 0);
+      const required = Math.trunc(Number(req.requiredCount) || 0) || participants.length - 1;
+
+      const newApproved = oldApproved + (approve ? 1 : 0);
+      const newRejected = oldRejected + (approve ? 0 : 1);
+      const release = newRejected > 0;
+      const unanimous = !release && newApproved >= required;
+
+      const patch: Record<string, any> = { approvedCount: newApproved, rejectedCount: newRejected };
+      if (release || unanimous) {
+        patch.status = release ? 'REJECTED' : 'APPROVED';
+        patch.resolvedAt = now;
+      }
+      if (!release && unanimous && req.releasedAt == null) {
+        const amount = Math.trunc(Number(req.amountMinor) || 0);
+        if (amount > savedMinor) throw new Error('This goal no longer has that much in it.');
+        patch.releasedAt = now;
+        tx.update(goalRef, { savedMinor: increment(-amount), lastTxnId: txnRef.id, updatedAt: now });
+        tx.set(txnRef, {
+          goalId,
+          householdId,
+          actorUid: user.uid,
+          amountMinor: -amount,
+          type: 'WITHDRAWAL',
+          sourceExpenseId: null,
+          note: req.reason || null,
+          at: now,
+        });
+      }
+      tx.set(voteRef, { goalId, uid: user.uid, displayName: user.uid, state, decidedAt: now });
+      tx.update(requestRef, patch);
+    });
+  };
+
+  const saveGoalSettings = async (settings: Partial<GoalSettings>) => {
+    if (!householdId) throw new Error('No household selected');
+    const user = requireUser();
+    const payload = { ...(goalSettings ?? EMPTY_GOAL_SETTINGS), ...settings, uid: user.uid };
+    await setDoc(doc(db, 'households', householdId, 'goalSettings', user.uid), payload, { merge: true });
   };
 
   /**
@@ -935,7 +1306,8 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
         categories,
         expenses,
         settlements,
-        topups,
+        goals,
+    goalSettings: goalSettings ?? EMPTY_GOAL_SETTINGS,
         wallets,
         walletTxns,
         limits,
@@ -959,7 +1331,12 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
         updateExpense,
         deleteExpense,
         addSettlement,
-        addTopup,
+        createGoal,
+        contributeToGoal,
+        applyRoundUp,
+        requestGoalSpending,
+        answerGoalSpending,
+        saveGoalSettings,
         logActivity,
         refreshData,
       }}

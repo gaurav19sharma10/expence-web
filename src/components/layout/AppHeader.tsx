@@ -27,6 +27,7 @@ const NAV: { key: Screen; label: string; icon: string }[] = [
   { key: 'insights', label: 'Insights', icon: 'chart' },
   { key: 'members', label: 'Family', icon: 'users' },
   { key: 'wallets', label: 'Wallets', icon: 'wallet' },
+  { key: 'goals', label: 'Goals', icon: 'target' },
   { key: 'settings', label: 'Settings', icon: 'sliders' },
 ];
 
@@ -212,6 +213,18 @@ export function AppHeader({ screen, onNavigate, query, onQueryChange }: Props) {
                     >
                       <VectorIcon name="wallet" size={15} color="var(--color-brand)" />
                       Wallets
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onNavigate('goals');
+                        setMenuOpen(false);
+                      }}
+                      className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-body transition-colors hover:bg-surface-sunken"
+                    >
+                      <VectorIcon name="target" size={15} color="var(--color-brand)" />
+                      Goals
                     </button>
                   </div>
 

@@ -158,10 +158,22 @@ export function GoalsScreen() {
           setTxns([]);
           setError(null);
         }}
-        onEdit={onEdit}
-        onDelete={(id) => {
-          void deleteGoal(id);
-          onBack();
+        // Handlers, not the parent's own props: `onEdit` and `onBack` are
+        // parameters of GoalDetail, not in scope here. `onBack` in particular is
+        // the parent's, so calling it would clear this screen instead of going
+        // back to the list.
+        onEdit={(goal) => setEditingId(goal.id)}
+        onDelete={async (id) => {
+          setBusy(true);
+          setError(null);
+          try {
+            await deleteGoal(id);
+            setSelectedId(null);
+          } catch (err: any) {
+            setError(err?.message || 'Could not delete that goal.');
+          } finally {
+            setBusy(false);
+          }
         }}
         onContribute={async (amountMinor, note) => {
           setBusy(true);

@@ -33,6 +33,7 @@ interface HouseholdContextType {
   expenses: any[];
   settlements: any[];
   goals: any[];
+  goalTxns: any[];
   goalSettings: GoalSettings;
   wallets: any[];
   walletTxns: any[];
@@ -68,6 +69,7 @@ interface HouseholdContextType {
   saveGoalSettings: (settings: Partial<GoalSettings>) => Promise<void>;
   updateGoalDetails: (goalId: string, details: any) => Promise<void>;
   deleteGoal: (goalId: string) => Promise<void>;
+  observeGoalTxns: (householdId: string, goalId: string) => () => void;
   logActivity: (kind: string, summary: string, amountMinor?: number, targetId?: string) => Promise<void>;
   refreshData: () => void;
 }
@@ -203,6 +205,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   const [settlements, setSettlements] = useState<any[]>([]);
   const [goals, setGoals] = useState<any[]>([]);
   const [goalSettings, setGoalSettings] = useState<GoalSettings | null>(null);
+  const [goalTxns, setGoalTxns] = useState<any[]>([]);
   const [wallets, setWallets] = useState<any[]>([]);
   const [walletTxns, setWalletTxns] = useState<any[]>([]);
   const [limits, setLimits] = useState<any[]>([]);
@@ -1304,6 +1307,27 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     void logActivity('GOAL_DELETED', `deleted ${goalName}`, undefined, goalId);
   };
 
+  /**
+   * One goal's ledger.
+   *
+   * `whereEqualTo('goalId', ...)` is not a filter: the read rule reaches the goal
+   * through the document's own `goalId` field, and Firestore will only prove such
+   * a rule for a list query when the query constrains that field. Without it the
+   * listener is refused outright, and a refused read looks exactly like an empty
+   * collection -- so the activity list showed "Nothing in yet" no matter what had
+   * been saved.
+   */
+  const observeGoalTxns = (hid: string, goalId: string) =>
+    onSnapshot(
+      query(collection(db, 'households', hid, 'goals', goalId, 'goalTxns'),
+        where('goalId', '==', goalId),
+        orderBy('at')),
+      (snap) => {
+        setGoalTxns(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      },
+      (err) => console.error('goalTxns read failed:', err),
+    );
+
   const saveGoalSettings = async (settings: Partial<GoalSettings>) => {
     if (!householdId) throw new Error('No household selected');
     const user = requireUser();
@@ -1356,6 +1380,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
         expenses,
         settlements,
         goals,
+        goalTxns,
     goalSettings: goalSettings ?? EMPTY_GOAL_SETTINGS,
         wallets,
         walletTxns,
@@ -1388,6 +1413,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
         saveGoalSettings,
         updateGoalDetails,
         deleteGoal,
+        observeGoalTxns,
         logActivity,
         refreshData,
       }}

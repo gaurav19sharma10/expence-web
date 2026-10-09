@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Modal } from '../components/ui/Modal';
 import { Banner, Button, Field, SelectInput, TextInput } from '../components/ui/Field';
 import { SkeletonGroup } from '../components/ui/Skeleton';
@@ -100,6 +100,7 @@ function percent(goal: any): number {
 
 export function GoalsScreen() {
   const { user } = useAuth();
+  const { observeGoalTxns } = useHousehold();
   const {
     household,
     members,
@@ -117,7 +118,6 @@ export function GoalsScreen() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [txns, setTxns] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -141,13 +141,20 @@ export function GoalsScreen() {
 
   const selected = goals.find((g: any) => g.id === selectedId) || null;
 
+  // The provider keeps the open goal's ledger, so the detail screen reads it
+  // rather than owning a second subscription that could drift.
+  const selectedTxns = useMemo(
+    () => (selectedId ? goalTxns.filter((t: any) => t.goalId === selectedId) : []),
+    [goalTxns, selectedId],
+  );
+
   const nameOf = (uid: string) => members.find((m: any) => m.uid === uid)?.displayName || 'Member';
 
   if (selected) {
     return (
       <GoalDetail
         goal={selected}
-        txns={txns}
+        txns={selectedTxns}
         members={members}
         currency={currency}
         myBalance={Number(myWallet?.balanceMinor) || 0}
@@ -155,7 +162,6 @@ export function GoalsScreen() {
         busy={busy}
         onBack={() => {
           setSelectedId(null);
-          setTxns([]);
           setError(null);
         }}
         // Handlers, not the parent's own props: `onEdit` and `onBack` are
